@@ -1,0 +1,9 @@
+{
+  "name": "receiver-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "수신자 서버 부하 (Next.js 화면 붙이기 전 단계). 같은 mysql2 풀·같은 SQL을 쓴다.",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "mysql2": "^3.11.0" }
+}

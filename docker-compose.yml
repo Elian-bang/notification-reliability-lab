@@ -1,0 +1,50 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dl-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: labpass
+      MYSQL_DATABASE: deadlock_lab
+    command:
+      - --innodb-lock-wait-timeout=5
+      - --transaction-isolation=REPEATABLE-READ
+      - --innodb-print-all-deadlocks=ON
+      - --performance-schema=ON
+    ports: ["13306:3306"]
+    cpus: 2          # 고정값 — 실험 중 바꾸지 않는다
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-plabpass"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # 빌드 전용 (로컬에 maven/gradle 없이도 돌아간다)
+  build:
+    image: maven:3.9-eclipse-temurin-21
+    working_dir: /work
+    volumes:
+      - .:/work
+      - maven-repo:/root/.m2
+    profiles: ["build"]
+    command: mvn -q -B -DskipTests package
+
+  # 수신자 서버 부하 — Node, 자체 커넥션 풀
+  receiver:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./apps/receiver-sim:/app
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      CONCURRENCY: "12"
+      INTERVAL_MS: "3"
+      POOL: "12"
+    depends_on:
+      mysql: { condition: service_healthy }
+    profiles: ["run"]
+    command: sh -c "npm install --silent && node index.js"
+
+volumes:
+  maven-repo:

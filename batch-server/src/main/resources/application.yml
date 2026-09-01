@@ -1,0 +1,28 @@
+spring:
+  application.name: batch-server
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:13306/deadlock_lab?useSSL=false&allowPublicKeyRetrieval=true}
+    username: root
+    password: labpass
+    hikari:
+      maximum-pool-size: 12      # 배치 전용 풀. 수신자/요청 서버와 분리된다
+      minimum-idle: 12
+  sql.init.mode: always
+  batch:
+    job.enabled: false           # Job 은 실험 러너가 variant 마다 직접 띄운다
+    jdbc.initialize-schema: always
+  jpa:
+    hibernate.ddl-auto: none
+    open-in-view: false
+  main.banner-mode: off
+
+logging.level.root: WARN
+
+lab:
+  tenants: 5
+  accounts-per-tenant: 200     # 계정 1000개 — 운영 "대상 평균 1천 명"
+  requests: 4000                 # 배치가 처리할 발송 요청
+  batch-workers: 4
+  api-delay-micros: 400          # 알림 INSERT 후 외부 채널사 API 대기 흉내
+  warmup-millis: 1500            # Node 부하가 붙을 시간
+  only: ""
