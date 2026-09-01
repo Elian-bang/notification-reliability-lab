@@ -1,0 +1,84 @@
+package dev.elian.lab.batch;
+
+import dev.elian.lab.common.Knobs;
+import dev.elian.lab.common.SendMode;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+
+/**
+ * 발송 처리 SQL. Tasklet 과 chunk 가 <b>같은 코드를 쓴다</b> —
+ * 그래야 두 형태의 차이가 "트랜잭션 경계" 하나로만 갈린다.
+ *
+ * <p><b>member_account 를 갱신하는 문장은 한 줄도 없다.</b>
+ * 계정 행 락은 notification INSERT 시 FK 검사로만 걸린다.
+ */
+@Component
+public class SendOps {
+
+    static final String SELECT_PENDING =
+            "SELECT id, account_id FROM notification_request WHERE status = 'PENDING' ORDER BY id LIMIT ?";
+    static final String INSERT_NOTI =
+            "INSERT INTO notification (account_id, request_id, status, created_at) VALUES (?, ?, 'CREATED', NOW(6))";
+    static final String UPDATE_NOTI_SENT_BY_REQ =
+            "UPDATE notification SET status = 'SENT', sent_at = NOW(6) WHERE request_id = ?";
+    static final String UPDATE_REQ_DONE =
+            "UPDATE notification_request SET status = 'DONE', finished_at = NOW(6) WHERE id = ?";
+
+    private final JdbcTemplate jdbc;
+
+    public SendOps(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+
+    public List<SendTarget> findPending(int limit) {
+        return jdbc.query(SELECT_PENDING,
+                (rs, i) -> new SendTarget(rs.getLong("id"), rs.getLong("account_id")), limit);
+    }
+
+    /**
+     * 대상 묶음 하나를 발송 처리한다.
+     *
+     * @param apiDelayMicros 외부 채널사 호출 흉내. {@code knobs.apiCallInTx()} 가 false 면
+     *                       호출자가 트랜잭션 밖에서 미리 대기하고 여기엔 0 이 온다.
+     */
+    public void send(List<SendTarget> targets, Knobs knobs, long apiDelayMicros) {
+        if (targets.isEmpty()) return;
+
+        if (knobs.sendMode() == SendMode.UPDATE_ONLY) {
+            // 알림 행이 미리 만들어져 있다 → INSERT 가 없으므로 FK 부모 행 S락도 없다
+            for (SendTarget t : targets) {
+                jdbc.update(UPDATE_NOTI_SENT_BY_REQ, t.requestId());
+                spin(apiDelayMicros);
+                jdbc.update(UPDATE_REQ_DONE, t.requestId());
+            }
+            return;
+        }
+
+        if (knobs.sendMode() == SendMode.BULK) {
+            List<Object[]> ins = targets.stream().map(t -> new Object[]{t.accountId(), t.requestId()}).toList();
+            List<Object[]> ids = targets.stream().map(t -> new Object[]{t.requestId()}).toList();
+            jdbc.batchUpdate(INSERT_NOTI, ins);      // FK S락 (묶어서 한 번)
+            spin(apiDelayMicros);
+            jdbc.batchUpdate(UPDATE_NOTI_SENT_BY_REQ, ids);
+            jdbc.batchUpdate(UPDATE_REQ_DONE, ids);
+            return;
+        }
+
+        // PER_ROW — 최초 상태
+        for (SendTarget t : targets) {
+            jdbc.update(INSERT_NOTI, t.accountId(), t.requestId());  // 자원 A + FK로 계정에 S락
+            spin(apiDelayMicros);                                     // 락을 쥔 채 외부 호출을 기다린다
+            jdbc.update(UPDATE_NOTI_SENT_BY_REQ, t.requestId());
+            jdbc.update(UPDATE_REQ_DONE, t.requestId());
+        }
+    }
+
+    /** apiCallInTx=false 일 때 트랜잭션 밖에서 대신 기다린다. */
+    public static void waitExternalApi(long micros) { spin(micros); }
+
+    private static void spin(long micros) {
+        if (micros <= 0) return;
+        long until = System.nanoTime() + micros * 1000L;
+        while (System.nanoTime() < until) Thread.onSpinWait();
+    }
+}
