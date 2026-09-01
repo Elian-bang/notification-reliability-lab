@@ -44,6 +44,7 @@ public class TaskletSendJob {
                     contribution.incrementWriteCount(targets.size());
                     return RepeatStatus.CONTINUABLE;   // 남은 게 없을 때까지 반복
                 }, txManager)
+                .transactionAttribute(TxAttr.of(k))   // 격리수준을 tasklet 트랜잭션에 적용
                 .build();
 
         return new JobBuilder("taskletSendJob-" + k.id(), jobRepository).start(step).build();

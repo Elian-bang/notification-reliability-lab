@@ -57,6 +57,7 @@ public class ChunkSendJob {
                 .<SendTarget, SendTarget>chunk(k.chunkSize(), txManager)
                 .reader(reader)
                 .writer(writer)
+                .transactionAttribute(TxAttr.of(k))   // 격리수준을 chunk 트랜잭션에 적용
                 .build();
 
         return new JobBuilder("chunkSendJob-" + k.id(), jobRepository).start(step).build();

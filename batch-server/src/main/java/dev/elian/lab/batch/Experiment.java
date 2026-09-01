@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,7 @@ public class Experiment implements CommandLineRunner {
     @Value("${lab.api-delay-micros}")      long apiDelay;
     @Value("${lab.warmup-millis}")         long warmup;
     @Value("${lab.only:}")                 String only;
+    @Value("${lab.repeat:1}")               int repeat;
 
     public Experiment(JdbcTemplate jdbc, Seeder seeder, RunControl control,
                       TaskletSendJob taskletJob, ChunkSendJob chunkJob, JobLauncher launcher) {
@@ -83,15 +85,17 @@ public class Experiment implements CommandLineRunner {
                 테넌트 %d · 계정 %d · 발송요청 %d · 외부API지연 %dus
                 %n""", tenants, tenants * accountsPerTenant, requests, apiDelay);
 
-        Map<Knobs, Result> results = new LinkedHashMap<>();
+        Map<Knobs, List<Result>> results = new LinkedHashMap<>();
         for (Knobs k : variants()) {
             if (only != null && !only.isBlank() && !List.of(only.split(",")).contains(k.id())) continue;
-            results.put(k, runOne(k));
+            List<Result> runs = new ArrayList<>();
+            for (int i = 1; i <= repeat; i++) runs.add(runOne(k, i));
+            results.put(k, runs);
         }
         report(results);
     }
 
-    private Result runOne(Knobs k) throws Exception {
+    private Result runOne(Knobs k, int attempt) throws Exception {
         String runId = k.id() + "-" + System.currentTimeMillis();
 
         control.stop();
@@ -122,8 +126,8 @@ public class Experiment implements CommandLineRunner {
 
         Result r = new Result(rollbacks, written, exec.getExitStatus().getExitCode(),
                 recv, elapsed, innodb, dump);
-        System.out.printf("%-4s %-30s | 배치 롤백=%3d 기록=%5d %-9s | 수신자 %sdl/%sto | InnoDB=%2d | %.1fs%n",
-                k.id(), k.label(), rollbacks, written, r.status(),
+        System.out.printf("%-4s #%d %-28s | 배치 롤백=%3d 기록=%5d | 수신자 %sdl/%sto | InnoDB=%2d | %.1fs%n",
+                k.id(), attempt, k.label(), rollbacks, written,
                 g(recv, "deadlocks"), g(recv, "lock_timeouts"), innodb, elapsed / 1000.0);
         return r;
     }
@@ -133,35 +137,55 @@ public class Experiment implements CommandLineRunner {
 
     private static Object g(Map<String, Object> m, String k) { return m.isEmpty() ? "__" : m.get(k); }
 
-    private void report(Map<Knobs, Result> results) throws Exception {
+    private static long dl(Result r) {
+        Object v = r.receiver().get("deadlocks");
+        return v == null ? r.innodbDeadlocks() : ((Number) v).longValue();
+    }
+
+    private static String spread(List<Result> runs) {
+        List<Long> v = runs.stream().map(Experiment::dl).sorted().toList();
+        long min = v.get(0), max = v.get(v.size() - 1), med = v.get(v.size() / 2);
+        return v.size() == 1 ? String.valueOf(min)
+                : "%d~%d (중앙 %d)".formatted(min, max, med);
+    }
+
+    private void report(Map<Knobs, List<Result>> results) throws Exception {
         StringBuilder sb = new StringBuilder("# A-M8 Deadlock Matrix — 측정 결과\n\n");
         sb.append("""
                 배치(알림 A → FK로 계정 B) ↔ 수신자(계정 B → 알림 A)
                 **배치는 member_account 를 갱신하지 않는다. 계정 락은 FK 로만 걸린다.**
 
-                고정값: 테넌트 %d · 계정 %d · 발송요청 %d · 외부API지연 %dus
+                고정값: 테넌트 %d · 계정 %d · 발송요청 %d · 외부API지연 %dus · 반복 %d회
                 MySQL 8.0 (2 CPU / 2GB), innodb_lock_wait_timeout=5s
 
-                """.formatted(tenants, tenants * accountsPerTenant, requests, apiDelay));
-        sb.append("| # | 구성 | 배치 롤백 | 기록 | **수신자 데드락** | 수신자 타임아웃 | 토큰갱신 실패 | 알림확인 실패 | InnoDB | 소요 |\n");
-        sb.append("|---|---|---|---|---|---|---|---|---|---|\n");
-        results.forEach((k, r) -> sb.append("| %s | %s<br><sub>%s</sub> | %d | %d | **%s** | %s | %s | %s | %d | %.1fs |\n"
-                .formatted(k.id(), k.label(), k.describe(), r.rollbacks(), r.written(),
-                        g(r.receiver(), "deadlocks"), g(r.receiver(), "lock_timeouts"),
-                        g(r.receiver(), "step_token_fail"), g(r.receiver(), "step_read_fail"),
-                        r.innodbDeadlocks(), r.elapsedMillis() / 1000.0)));
-        sb.append("\n> 실험 환경의 결과다. 운영 환경의 수치가 아니다.\n");
+                """.formatted(tenants, tenants * accountsPerTenant, requests, apiDelay, repeat));
 
-        results.forEach((k, r) -> {
-            if (!r.dump().isBlank()) {
-                sb.append("\n---\n\n## ").append(k.id()).append(" — LATEST DETECTED DEADLOCK\n\n```\n")
-                  .append(r.dump()).append("\n```\n");
+        sb.append("## 요약\n\n| # | 구성 | 수신자 데드락 | 회차별 |\n|---|---|---|---|\n");
+        results.forEach((k, runs) -> sb.append("| %s | %s | **%s** | %s |\n".formatted(
+                k.id(), k.label(), spread(runs),
+                runs.stream().map(r -> String.valueOf(dl(r))).reduce((a, b) -> a + " / " + b).orElse("-"))));
+
+        sb.append("\n## 회차 상세\n\n| # | 회차 | 구성 | 배치 롤백 | 기록 | 수신자 데드락 | InnoDB | 소요 |\n");
+        sb.append("|---|---|---|---|---|---|---|---|\n");
+        results.forEach((k, runs) -> {
+            for (int i = 0; i < runs.size(); i++) {
+                Result r = runs.get(i);
+                sb.append("| %s | %d | <sub>%s</sub> | %d | %d | %d | %d | %.1fs |\n".formatted(
+                        k.id(), i + 1, k.describe(), r.rollbacks(), r.written(),
+                        dl(r), r.innodbDeadlocks(), r.elapsedMillis() / 1000.0));
             }
         });
+        sb.append("\n> 실험 환경의 결과다. 운영 환경의 수치가 아니다.\n");
+
+        results.forEach((k, runs) -> runs.stream().filter(r -> !r.dump().isBlank()).findFirst().ifPresent(r ->
+                sb.append("\n---\n\n## ").append(k.id()).append(" — LATEST DETECTED DEADLOCK\n\n```\n")
+                  .append(r.dump()).append("\n```\n")));
 
         Path out = Path.of("results", "A-M8_결과.md");
         Files.createDirectories(out.getParent());
         Files.writeString(out, sb.toString());
-        System.out.println("\n→ " + out.toAbsolutePath());
+        System.out.println("\n요약");
+        results.forEach((k, runs) -> System.out.printf("  %-4s %-30s %s%n", k.id(), k.label(), spread(runs)));
+        System.out.println("→ " + out.toAbsolutePath());
     }
 }

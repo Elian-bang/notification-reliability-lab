@@ -20,6 +20,7 @@ const spin = (us) => { const end = process.hrtime.bigint() + BigInt(us * 1000); 
 const M = () => ({ attempted:0, committed:0, deadlocks:0, lockTimeouts:0, otherErrors:0,
                    stepTokenFail:0, stepReadFail:0, lat:[] });
 let metrics = M(), currentRun = null, active = false, variant = {};
+const closedRuns = new Set();   // 닫힌 run 은 더 이상 갱신하지 않는다 — 종료 후 실패가 이전 run 에 붙는 것을 막는다
 
 async function readControl() {
   const [rows] = await pool.query('SELECT * FROM experiment_control WHERE id = 1');
@@ -97,7 +98,7 @@ function p95() {
 }
 
 async function flush() {
-  if (!currentRun) return;
+  if (!currentRun || closedRuns.has(currentRun)) return;
   await pool.execute(
     `INSERT INTO experiment_metric
        (run_id, role, attempted, committed, deadlocks, lock_timeouts, other_errors, p95_millis, step_token_fail, step_read_fail)
@@ -128,8 +129,10 @@ async function controlLoop() {
           console.log(`[receiver] run=${c.run_id} variant=${c.variant_id} unify=${c.receiver_unify} split=${c.receiver_tx_split}`);
         }
         variant = c;
+        const wasActive = active;
         active = c.active === 1;
         if (active) await flush();
+        else if (wasActive) { await flush(); closedRuns.add(currentRun); }   // 정지 직후 마지막 집계
       }
     } catch (e) { /* 컨트롤 테이블 준비 전 */ }
     await new Promise(r => setTimeout(r, 300));
