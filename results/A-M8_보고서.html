@@ -103,112 +103,160 @@
   a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
+<style>
+  /* ── 추적 기록 ── */
+  .log{display:flex;flex-direction:column;gap:0;counter-reset:step}
+  .entry{
+    display:grid;grid-template-columns:3.25rem 1fr;
+    border-left:1px solid var(--rule);position:relative
+  }
+  .entry:last-child{border-left-color:transparent}
+  .rail{position:relative;display:flex;justify-content:center;padding-top:1.9rem}
+  .dot{
+    width:.7rem;height:.7rem;border-radius:50%;background:var(--surface);
+    border:2px solid var(--rule-strong);margin-left:-1px;z-index:1
+  }
+  .entry.reject .dot{border-color:var(--ink-3)}
+  .entry.confirm .dot{background:var(--calm);border-color:var(--calm)}
+  .entry.find .dot{background:var(--signal);border-color:var(--signal);box-shadow:0 0 0 4px var(--signal-bg)}
+  .body-col{padding:1.5rem 0 2.25rem;display:flex;flex-direction:column;gap:.85rem;min-width:0}
+  .entry:last-child .body-col{padding-bottom:0}
+  .hdr{display:flex;flex-wrap:wrap;align-items:baseline;gap:.6rem}
+  .stepno{
+    font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+    font-size:.72rem;letter-spacing:.1em;color:var(--ink-3);counter-increment:step
+  }
+  .stepno::before{content:"STEP " counter(step,decimal-leading-zero)}
+  .badge{
+    font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:.12rem .5rem;border-radius:2px;border:1px solid var(--rule-strong);color:var(--ink-3);
+    background:var(--surface-2);white-space:nowrap
+  }
+  .badge.reject{color:var(--ink-2)}
+  .badge.confirm{color:var(--calm);border-color:var(--calm);background:var(--calm-bg)}
+  .badge.find{color:var(--signal);border-color:var(--signal);background:var(--signal-bg)}
+  .entry h3{font-size:1.16rem;font-weight:750;color:var(--ink);width:100%;margin-top:.15rem}
+  .entry p{color:var(--ink-2);font-size:.95rem;max-width:36rem}
+  .did{
+    display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;font-size:.88rem;
+    background:var(--surface);border:1px solid var(--rule);border-radius:2px;padding:.85rem 1.05rem
+  }
+  .did dt{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);padding-top:.18rem;white-space:nowrap}
+  .did dd{margin:0;color:var(--ink-2)}
+  .did dd b{color:var(--ink);font-weight:700}
+  @media (max-width:34rem){
+    .entry{grid-template-columns:1.6rem}
+    .did{grid-template-columns:1fr;gap:.15rem}
+    .did dt{padding-top:.5rem}
+  }
+</style>
 
 <div class="wrap">
 
 <header>
   <div class="eyebrow">A-M8 · Deadlock Matrix · 2026-09-02</div>
   <h1>인덱스 하나가 만든 데드락</h1>
-  <p class="lede">푸시 발송 데드락을 없앤 조치들 중 무엇이 진짜였는지 가리려고 12개 구성을 3회씩 측정했다.
-  답은 측정 대상 바깥에 있었다.</p>
+  <p class="lede">푸시 발송 데드락의 원인을 가리려고 모델을 세 번 폐기하고 36회를 측정했다.
+  원인은 측정 대상 바깥에 있었다.</p>
   <div class="meta">
-    <span><b>36</b>회 실행</span>
-    <span><b>12</b>개 구성 × 3회</span>
+    <span><b>8</b>단계 추적</span>
+    <span><b>3</b>회 모델 폐기</span>
+    <span><b>36</b>회 최종 측정</span>
     <span>MySQL 8.0 · 2 CPU / 2 GB</span>
-    <span>계정 1,000 · 발송요청 4,000</span>
-    <span>수신자 동시 12</span>
   </div>
 </header>
 
 <section>
+  <h2>증상</h2>
+  <div class="prose">
+    <p>운영 중인 알림 서버에서 <strong>푸시 발송 데드락이 주 2~3회</strong> 발생했다.
+    발송 대상은 평균 1천 명 규모. 죽는 쪽은 배치가 아니라 사용자 요청이었다.</p>
+    <p>장애 대응이 우선이라 조치 세 가지를 <strong>한 번에</strong> 넣었고 0건이 됐다.
+    그래서 <strong>무엇이 실제로 효과가 있었는지 모른다.</strong></p>
+  </div>
+
+  <div class="did">
+    <dt>조치 ①</dt><dd>대상 조회를 트랜잭션 밖으로 분리</dd>
+    <dt>조치 ②</dt><dd>상태 갱신을 BATCH UPDATE 로 전환</dd>
+    <dt>탐색 과정</dt><dd>처리 청크 500 → 200 축소 <span style="opacity:.7">(조치가 아니라 원인을 좁히는 과정이었다)</span></dd>
+  </div>
+
+  <div class="prose">
+    <p>운영 시스템에서 데드락을 일부러 낼 수는 없다.
+    <strong>같은 구조를 실험 환경에 세우고 조치를 하나씩만 되돌려</strong> 기여도를 가르기로 했다.</p>
+  </div>
+
   <div class="verdict">
-    <div class="big">인덱스가 정상이면 12개 구성 중 11개가 데드락 0건이다.
-    인덱스 하나를 빼면 그 자리에서 34~46건이 난다.</div>
-    <p>Tasklet이냐 chunk냐, 조회를 트랜잭션 밖으로 뺐냐, 벌크로 묶었냐, FK가 있냐 —
-    <code>notification.request_id</code>에 인덱스가 있는 한 <strong>어느 것도 차이를 만들지 않았다</strong>.
-    인덱스를 떼는 순간에만 데드락이 났다.</p>
-  </div>
-
-  <div class="split">
-    <div class="cell">
-      <span class="k">인덱스 정상</span>
-      <span class="v zero">0</span>
-      <span class="n">11개 구성 × 3회 = 33회 전부</span>
-    </div>
-    <div class="cell">
-      <span class="k">인덱스 없음 (V10)</span>
-      <span class="v hot">34~46</span>
-      <span class="n">3회 · 중앙 42</span>
-    </div>
-    <div class="cell">
-      <span class="k">배치 처리 시간</span>
-      <span class="v">−30%</span>
-      <span class="n">11.8s → 6.1~9.0s</span>
-    </div>
+    <div class="big">결론부터 — 조치 셋 다 아니었다.
+    <code>notification.request_id</code>에 인덱스가 없던 것이 원인이었다.</div>
+    <p>인덱스가 정상이면 12개 구성 중 11개가 데드락 0건이다. 인덱스 하나를 빼면 그 자리에서 34~46건이 난다.
+    아래는 거기까지 간 기록이다.</p>
   </div>
 </section>
 
 <hr>
 
 <section>
-  <h2>왜 인덱스가 락 문제가 되나</h2>
-  <div class="prose">
-    <p>배치는 발송을 끝내고 <code>UPDATE notification SET status='SENT' WHERE request_id = ?</code>로
-    한 건을 갱신한다. <code>request_id</code>에 인덱스가 없으면 이 문장이 테이블 전체를 훑는다.</p>
-  </div>
+  <h2>추적 기록</h2>
 
-<pre>EXPLAIN UPDATE notification SET status='SENT' WHERE request_id = 1;
+  <div class="log">
 
-<b>인덱스 없음</b>   type=index   possible_keys=NULL              key=PRIMARY            rows=<b>3861</b>
-<i>인덱스 있음</i>   type=range   possible_keys=idx_noti_request  key=idx_noti_request   rows=<i>1</i></pre>
-
-  <div class="prose">
-    <p><strong>REPEATABLE READ에서는 스캔한 행 전부에 next-key 락이 걸린다.</strong>
-    한 건을 고치려는 문장이 알림 테이블을 사실상 통째로 잠근다.
-    그 상태로 외부 채널사 응답을 기다리니, 그사이 접속한 수신자는 어느 알림을 열어도 배치와 부딪힌다.</p>
-    <p>인덱스를 붙이면 락 범위가 3,861행에서 1행으로 줄어든다. 부딪힐 확률이 사라진다.</p>
-  </div>
-</section>
-
-<hr>
-
-<section>
-  <h2>부딪히는 순간</h2>
-  <div class="prose">
-    <p>배치는 <code>member_account</code>를 갱신하는 코드가 한 줄도 없다.
-    그런데 알림을 INSERT할 때 FK 검사가 부모 행에 S락을 요청한다.
-    수신자는 로그인하면서 그 행에 X락을 쥔다.</p>
-  </div>
-
-  <div class="cycle">
-    <div class="step">
-      <div class="i mono">1</div>
-      <div class="b"><span class="who">배치</span><span class="act"><code>UPDATE notification</code> — 알림 행에 X락 (인덱스가 없으면 3,861행)</span></div>
+    <div class="entry reject">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge reject">가설 기각</span>
+          <h3>배치 워커끼리 부딪히는 것 아닐까</h3></div>
+        <p>같은 테이블의 같은 행들을 워커마다 다른 순서로 잡으면 사이클이 생긴다.
+        8워커에 처리 순서를 섞어 넣었다.</p>
+        <div class="did">
+          <dt>결과</dt><dd>데드락률 <b>85%</b>, 3회 안정 재현</dd>
+          <dt>기각 사유</dt><dd>실제 사건은 <b>배치와 수신자</b>의 충돌이었다. 이 모델에는 사용자 워크로드가 아예 없다</dd>
+          <dt>배운 것</dt><dd>재현됐다고 맞는 모델은 아니다. 숫자가 크게 나오면 오히려 의심해야 했다</dd>
+        </div>
+      </div>
     </div>
-    <div class="step">
-      <div class="i mono">2</div>
-      <div class="b"><span class="who">수신자</span><span class="act"><code>UPDATE member_account</code> — 토큰 갱신이 계정 행에 X락</span></div>
-    </div>
-    <div class="step block">
-      <div class="i mono">3</div>
-      <div class="b"><span class="who">배치 · 대기</span><span class="act"><code>INSERT notification</code> → FK가 계정 행에 <strong>S락</strong>을 요구 → 수신자가 쥐고 있음</span></div>
-    </div>
-    <div class="step block">
-      <div class="i mono">4</div>
-      <div class="b"><span class="who">수신자 · 대기</span><span class="act"><code>UPDATE notification</code> 읽음 처리 → 배치가 쥐고 있음</span></div>
-    </div>
-    <div class="step">
-      <div class="i mono">X</div>
-      <div class="b"><span class="who">InnoDB</span><span class="act">사이클 감지. undo가 적은 쪽을 죽인다 — <strong>언제나 수신자</strong></span></div>
-    </div>
-  </div>
 
-  <div class="prose">
-    <p>배치는 36회 실행 내내 롤백이 0이었다. 죽는 쪽은 항상 수신자다.
-    배치는 재시도하면 그만이지만 <strong>수신자는 로그인이나 알림 확인이 실패한다.</strong> 화면에서 에러를 본다.</p>
-  </div>
+    <div class="entry reject">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge reject">측정 불가</span>
+          <h3>배치와 수신자를 한 프로세스에서 흉내내다</h3></div>
+        <p>배치 스레드와 수신자 스레드를 한 JVM에 두고 돌렸다.
+        수신자 실패가 잡히기는 했는데, 그게 데드락인지 알 수 없었다.</p>
+        <div class="did">
+          <dt>문제</dt><dd>HikariCP 풀 하나를 양쪽이 공유한다. 배치가 커넥션을 오래 쥐면 수신자는 <b>커넥션을 못 얻어서</b> 실패한다 — 데드락이 아니라 풀 고갈이다</dd>
+          <dt>조치</dt><dd>서버를 <b>셋으로 분리</b>. 요청·수신자는 Node(mysql2), 배치는 JVM. 런타임까지 갈라서 풀·GC·스레드 모델을 물리적으로 분리했다</dd>
+        </div>
+      </div>
+    </div>
 
-  <h3>실측 원문 — SHOW ENGINE INNODB STATUS</h3>
+    <div class="entry find">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge find">계측 오류</span>
+          <h3>데드락 137건이 전부 &ldquo;락 타임아웃&rdquo;으로 집계됐다</h3></div>
+        <p>앱은 데드락 0건이라는데 <code>INNODB_METRICS</code>는 137을 가리켰다. 숫자가 정확히 일치해서 오분류임이 드러났다.</p>
+        <div class="did">
+          <dt>원인</dt><dd>Spring 예외 타입에 기댔다. <b>1213(데드락)과 1205(락 타임아웃)이 둘 다</b> <code>PessimisticLockingFailureException</code> 하위라 타입만으로는 갈리지 않는다</dd>
+          <dt>조치</dt><dd>예외 사슬에서 <b>벤더 에러코드</b>를 꺼내 판별. Node 쪽은 <code>err.errno</code>. 이후 InnoDB 카운터와 앱 집계를 매회 교차 검증했다</dd>
+          <dt>남는 값</dt><dd>계측을 먼저 검증하지 않았으면 이 뒤의 측정이 전부 무의미했다</dd>
+        </div>
+      </div>
+    </div>
+
+    <div class="entry confirm">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge confirm">재현 성공</span>
+          <h3>수신자만 죽는다 — 그리고 FK가 보였다</h3></div>
+        <p>서버를 나누고 계측을 고치자 사건이 재현됐다. 데드락 <strong>46 / 45 / 48</strong>건, 3회 안정.
+        배치 롤백은 0이다.</p>
+        <div class="did">
+          <dt>victim</dt><dd>언제나 <b>수신자</b>. InnoDB는 undo가 적은 쪽을 죽인다 — 배치는 undo 1,384 / 수신자는 1</dd>
+          <dt>피해</dt><dd>배치는 재시도하면 그만이지만 수신자는 <b>로그인과 알림 확인이 실패</b>한다. 화면에서 에러를 본다</dd>
+          <dt>발견</dt><dd>원문에 <code>lock mode S locks rec but not gap waiting</code>. 배치 코드에 계정 테이블을 잠그는 문장이 <b>한 줄도 없는데</b> FK 검사가 잠그고 있었다</dd>
+        </div>
+
 <pre>*** (1) TRANSACTION:          <span class="dim">← 수신자</span>
 UPDATE notification SET read_at = NOW(6) WHERE id = 962
 *** (1) HOLDS THE LOCK(S):
@@ -225,15 +273,95 @@ INSERT INTO notification (account_id, request_id, status, created_at)
   table `member_account`  <b>lock mode S locks rec but not gap waiting</b>   <span class="dim">← FK가 요구한 락</span>
 
 *** WE ROLL BACK TRANSACTION (1)</pre>
+      </div>
+    </div>
 
-  <div class="note">
-    <p>배치 코드에 <code>member_account</code>를 잠그는 문장은 없다. <code>lock mode S</code>는 FK 검사가 만든 것이다.
-    <strong>추측이 아니라 원문에 찍힌 값이다.</strong></p>
+    <div class="entry confirm">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge confirm">1차 측정</span>
+          <h3>조치를 하나씩 되돌려 보니 조회 분리는 효과가 없었다</h3></div>
+        <p>운영에서 밟은 순서를 그대로 변수로 만들었다.
+        ① Tasklet → ② chunk 전환 → ③ 조회를 트랜잭션 밖으로 → ④ 발송 방식 변경 세 가지.</p>
+        <div class="did">
+          <dt>재현 확인</dt><dd>V0 Tasklet <b>45</b> → V1 chunk 전환 <b>35</b>. <b>chunk로 바꿔도 안 없어진다</b> — 운영에서 겪은 것과 같다</dd>
+          <dt>이상 신호</dt><dd>V2(조회를 TX 밖으로) <b>40</b>. 이력서가 &ldquo;근본 조치&rdquo;라 부르는 것이 baseline과 구분되지 않는다</dd>
+          <dt>효과 있음</dt><dd>V3a(벌크로 묶기) <b>0</b>, V3b(알림 선생성) <b>0</b>, V8(FK 제거) <b>0</b></dd>
+          <dt>주의</dt><dd>V0가 실행마다 33~48로 흔들린다. 33~48은 노이즈 범위라 그 안의 값들은 서로 갈리지 않는다</dd>
+        </div>
+        <p>여기서 결론을 냈다 — <em>&ldquo;락 보유 시간은 왕복 횟수가 지배한다&rdquo;</em>.
+        V3c는 인위적 지연을 전부 뺐는데도 36건이 났고, 왕복만 3회로 줄인 V3a는 0이었기 때문이다.
+        <strong>이 결론은 뒤에 폐기된다.</strong></p>
+      </div>
+    </div>
+
+    <div class="entry find">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge find">원인 발견</span>
+          <h3>V5가 뒤집혔다 — 격리수준이 아니라 인덱스였다</h3></div>
+        <p>1차에서 놓친 결함 하나를 고쳤다. V5(READ COMMITTED)의 격리수준이 수신자에만 걸리고
+        배치 트랜잭션에는 안 걸려 있었다. 양쪽에 걸고 다시 재니 <strong>43 → 0</strong>으로 뒤집혔다.</p>
+        <p>격리수준 하나로 40건이 0이 되는 건 과하다. <code>EXPLAIN</code>을 떠봤다.</p>
+
+<pre>EXPLAIN UPDATE notification SET status='SENT' WHERE request_id = 1;
+
+type=index   possible_keys=<b>NULL</b>   key=PRIMARY   rows=<b>3861</b></pre>
+
+        <div class="did">
+          <dt>결함</dt><dd><code>notification.request_id</code>에 <b>인덱스가 없다.</b> 한 건을 고치는 UPDATE가 테이블 3,861행을 훑는다</dd>
+          <dt>왜 락이 되나</dt><dd><b>REPEATABLE READ는 스캔한 행 전부에 next-key 락</b>을 건다. 단일 행 갱신이 사실상 테이블 전역 락이 된다. READ COMMITTED는 안 맞는 행을 즉시 풀어준다 — 그래서 V5가 0이 됐던 것이다</dd>
+          <dt>판정</dt><dd>V5=0은 격리수준 효과가 아니었다. <b>인덱스 누락으로 부풀려진 락 범위가 걷힌 것</b>이다. baseline 40 내외도 부풀려진 값이다</dd>
+        </div>
+      </div>
+    </div>
+
+    <div class="entry confirm">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge confirm">변수로 승격</span>
+          <h3>결함을 지우지 않고 측정 대상으로 만들었다</h3></div>
+        <p>인덱스를 추가하고 끝낼 수도 있었지만, <strong>인덱스 유무 자체를 노브로 분리</strong>했다.
+        그래야 &ldquo;인덱스 하나 빠뜨리면 데드락이 몇 배가 되는가&rdquo;가 숫자로 남는다.</p>
+        <div class="did">
+          <dt>추가</dt><dd><code>ALTER TABLE notification ADD INDEX idx_noti_request (request_id)</code> → <code>rows=3861</code>이 <code>rows=1</code>로</dd>
+          <dt>신규 변수</dt><dd><b>V10</b> — 다른 조건은 V1과 같고 인덱스만 없는 구성</dd>
+        </div>
+      </div>
+    </div>
+
+    <div class="entry find">
+      <div class="rail"><div class="dot"></div></div>
+      <div class="body-col">
+        <div class="hdr"><span class="stepno"></span><span class="badge find">원인 확정</span>
+          <h3>인덱스가 있으면 무엇을 해도 0, 없으면 무엇을 해도 난다</h3></div>
+        <p>12개 구성을 3회씩 36회 돌렸다.</p>
+        <div class="split">
+          <div class="cell">
+            <span class="k">인덱스 정상</span>
+            <span class="v zero">0</span>
+            <span class="n">11개 구성 × 3회 = 33회 전부</span>
+          </div>
+          <div class="cell">
+            <span class="k">인덱스 없음 · V10</span>
+            <span class="v hot">34~46</span>
+            <span class="n">3회 · 중앙 42</span>
+          </div>
+          <div class="cell">
+            <span class="k">배치 처리 시간</span>
+            <span class="v">&minus;30%</span>
+            <span class="n">11.8s → 6.1~9.0s</span>
+          </div>
+        </div>
+        <p>Tasklet이냐 chunk냐, 조회를 밖으로 뺐냐, 벌크로 묶었냐, FK가 있냐 —
+        <strong>인덱스가 있는 한 어느 것도 차이를 만들지 않았다.</strong></p>
+      </div>
+    </div>
+
   </div>
 </section>
 
 <hr>
-
 <section>
   <h2>측정 결과</h2>
   <p class="prose">각 구성을 3회씩 돌렸다. ①~④는 운영에서 실제로 밟은 순서다.</p>
@@ -298,8 +426,9 @@ INSERT INTO notification (account_id, request_id, status, created_at)
 
 <hr>
 
+
 <section>
-  <h2>이력서 문장은 어떻게 되나</h2>
+  <h2>그래서 이력서는</h2>
 
   <h3>현재 서술</h3>
   <div class="note">
@@ -307,8 +436,6 @@ INSERT INTO notification (account_id, request_id, status, created_at)
     <strong>조회를 트랜잭션 밖으로 분리해 락을 쥔 채 대기하는 구간 자체를 제거한 것이 근본 조치</strong>였고,
     상태 갱신을 BATCH UPDATE로 전환해 락 점유 시간을 추가로 줄임 → 0건</p>
   </div>
-
-  <div class="prose"><p>이 실험이 말할 수 있는 것과 없는 것을 갈라야 한다.</p></div>
 
   <div class="split">
     <div class="cell">
@@ -324,13 +451,13 @@ INSERT INTO notification (account_id, request_id, status, created_at)
   </div>
 
   <div class="note warn">
-    <p><strong>확인이 필요하다.</strong> 운영에서 그 UPDATE가 인덱스를 탔는가?
-    안 탔다면 세 조치는 증상을 다루고 있었을 수 있고, 그렇다면 이력서의 근본 조치는 다시 써야 한다.
+    <p><strong>다음 확인 하나로 갈린다.</strong> 운영에서 그 UPDATE가 인덱스를 탔는가?</p>
+    <p>안 탔다면 조치들은 증상을 다루고 있었을 수 있고, 이력서의 &ldquo;근본 조치&rdquo;는 다시 써야 한다.
     탔다면 이 실험 결과는 실험 환경 한정으로 남기고 운영 서술은 그대로 둔다.</p>
   </div>
 
   <div class="prose">
-    <p>어느 쪽이든 <strong>새로 생긴 이야기</strong>가 있다 —
+    <p>어느 쪽이든 <strong>새로 생긴 이야기</strong>가 있다.
     데드락을 만나면 트랜잭션 길이부터 보게 되는데, 실제로 지배한 것은 <strong>락 범위</strong>였다.
     실행계획을 먼저 떠보는 것이 순서였다.</p>
   </div>
@@ -339,26 +466,11 @@ INSERT INTO notification (account_id, request_id, status, created_at)
 <hr>
 
 <section>
-  <h2>틀렸던 것들</h2>
-  <p class="prose">결론에 이르기까지 모델을 세 번 폐기했다.
-  남겨두는 이유는, 이 기록이 있어야 마지막 결론이 우연이 아니라는 근거가 되기 때문이다.</p>
+  <h2>남은 검증</h2>
   <ul>
-    <li><strong>초판 모델 폐기</strong> — 데드락을 배치 워커끼리의 행 순서 충돌로 잡았다. 85%를 3회 재현했지만 실제 사건은 배치와 수신자의 충돌이었다. 사용자 워크로드가 아예 없는 모델이었다.</li>
-    <li><strong>단일 프로세스 폐기</strong> — 커넥션 풀을 공유해서 수신자 실패가 데드락인지 풀 고갈인지 갈리지 않았다. 서버를 셋으로 나눴다.</li>
-    <li><strong>데드락 137건 오분류</strong> — Spring 예외 타입에 기댔더니 1213과 1205가 둘 다 <code>PessimisticLockingFailureException</code> 하위라 전부 타임아웃으로 집계됐다. 벤더 에러코드로 바꿨다.</li>
-    <li><strong>지표 수집 레이스</strong> — 작업 종료 후 실패가 이전 실행에 붙어 콘솔 0 · DB 2로 갈렸다. 정지 신호를 받으면 즉시 마지막 집계를 하고 닫도록 고쳤다.</li>
-    <li><strong>스키마 결함</strong> — 그리고 이 보고서의 결론이 된 인덱스 누락. 결과가 이상해서 <code>EXPLAIN</code>을 떠보지 않았다면 격리수준을 낮추면 데드락이 사라진다는 틀린 결론을 낼 뻔했다.</li>
-  </ul>
-</section>
-
-<hr>
-
-<section>
-  <h2>다음</h2>
-  <ul>
-    <li>인덱스가 정상인 상태에서 <strong>부하를 올려</strong> 데드락이 다시 나는 지점을 찾는다. 그래야 0의 의미가 확정된다</li>
-    <li>운영 UPDATE의 실행계획 확인 — 이력서 서술 수정 여부가 여기 걸린다</li>
-    <li>요청 서버와 수신자 서버에 대시보드를 붙여 화면에서 직접 재현하고 실패 화면을 남긴다</li>
+    <li><strong>0의 의미를 확정한다</strong> — 인덱스가 정상인 상태에서 부하를 올려 데드락이 다시 나는 지점을 찾는다. 지금의 0은 &ldquo;불가능&rdquo;이 아니라 &ldquo;이 부하에서 재현되지 않음&rdquo;이다</li>
+    <li><strong>운영 UPDATE의 실행계획 확인</strong> — 이력서 서술 수정 여부가 여기 걸린다</li>
+    <li><strong>화면에서 재현</strong> — 요청 서버와 수신자 서버에 대시보드를 붙여 직접 눌러 데드락을 만들고, 수신자가 보는 실패 화면을 남긴다</li>
   </ul>
 </section>
 
