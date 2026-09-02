@@ -1,4 +1,4 @@
-<title>인덱스 하나가 만든 데드락</title>
+<title>99초 동안 잠긴 행 하나</title>
 <style>
   :root{
     --ground:#f2f4f7; --surface:#ffffff; --surface-2:#e9edf2; --surface-3:#dfe5ec;
@@ -104,256 +104,196 @@
   @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
 <style>
-  /* ── 추적 기록 ── */
-  .log{display:flex;flex-direction:column;gap:0;counter-reset:step}
-  .entry{
-    display:grid;grid-template-columns:3.25rem 1fr;
-    border-left:1px solid var(--rule);position:relative
-  }
-  .entry:last-child{border-left-color:transparent}
-  .rail{position:relative;display:flex;justify-content:center;padding-top:1.9rem}
-  .dot{
-    width:.7rem;height:.7rem;border-radius:50%;background:var(--surface);
-    border:2px solid var(--rule-strong);margin-left:-1px;z-index:1
-  }
-  .entry.reject .dot{border-color:var(--ink-3)}
-  .entry.confirm .dot{background:var(--calm);border-color:var(--calm)}
-  .entry.find .dot{background:var(--signal);border-color:var(--signal);box-shadow:0 0 0 4px var(--signal-bg)}
-  .body-col{padding:1.5rem 0 2.25rem;display:flex;flex-direction:column;gap:.85rem;min-width:0}
-  .entry:last-child .body-col{padding-bottom:0}
-  .hdr{display:flex;flex-wrap:wrap;align-items:baseline;gap:.6rem}
-  .stepno{
-    font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
-    font-size:.72rem;letter-spacing:.1em;color:var(--ink-3);counter-increment:step
-  }
-  .stepno::before{content:"STEP " counter(step,decimal-leading-zero)}
-  .badge{
-    font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-    padding:.12rem .5rem;border-radius:2px;border:1px solid var(--rule-strong);color:var(--ink-3);
-    background:var(--surface-2);white-space:nowrap
-  }
-  .badge.reject{color:var(--ink-2)}
-  .badge.confirm{color:var(--calm);border-color:var(--calm);background:var(--calm-bg)}
-  .badge.find{color:var(--signal);border-color:var(--signal);background:var(--signal-bg)}
-  .entry h3{font-size:1.16rem;font-weight:750;color:var(--ink);width:100%;margin-top:.15rem}
-  .entry p{color:var(--ink-2);font-size:.95rem;max-width:36rem}
-  .did{
-    display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;font-size:.88rem;
-    background:var(--surface);border:1px solid var(--rule);border-radius:2px;padding:.85rem 1.05rem
-  }
-  .did dt{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);padding-top:.18rem;white-space:nowrap}
-  .did dd{margin:0;color:var(--ink-2)}
-  .did dd b{color:var(--ink);font-weight:700}
-  @media (max-width:34rem){
-    .entry{grid-template-columns:1.6rem}
-    .did{grid-template-columns:1fr;gap:.15rem}
-    .did dt{padding-top:.5rem}
-  }
+  /* ── 타임라인 ── */
+  .tl{background:var(--surface);border:1px solid var(--rule);border-radius:2px;padding:1.5rem 1.5rem 1.1rem}
+  .tl-track{position:relative;height:2.2rem;margin:1.6rem 0 .4rem;background:var(--surface-2);border-radius:2px}
+  .bar{position:absolute;top:.35rem;height:1.5rem;border-radius:2px;display:flex;align-items:center;
+       padding:0 .5rem;font-size:.7rem;font-weight:700;color:var(--ground);white-space:nowrap;overflow:hidden}
+  .bar.send{background:var(--accent)}
+  .lock-track{position:relative;height:1.9rem;margin:.45rem 0}
+  .lock{position:absolute;top:0;height:1.5rem;border-radius:2px;background:var(--signal);
+        display:flex;align-items:center;padding:0 .5rem;font-size:.7rem;font-weight:700;color:var(--ground);white-space:nowrap}
+  .hits{position:relative;height:1.6rem;margin-top:.2rem}
+  .hit{position:absolute;top:0;transform:translateX(-50%);font-size:.68rem;font-weight:700;
+       font-family:ui-monospace,Consolas,monospace;color:var(--signal)}
+  .hit.ok{color:var(--calm)}
+  .axis{position:relative;height:1.4rem;border-top:1px solid var(--rule-strong);margin-top:.3rem}
+  .tick{position:absolute;top:.25rem;transform:translateX(-50%);font-size:.68rem;color:var(--ink-3);
+        font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
+  .tl-legend{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-top:1rem;font-size:.76rem;color:var(--ink-3)}
+  .tl-legend i{display:inline-block;width:.65rem;height:.65rem;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
+  .tl-row-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);margin-bottom:.15rem}
+
+  /* ── 발견 단계 ── */
+  .find-list{display:flex;flex-direction:column;gap:0;counter-reset:f}
+  .f{display:grid;grid-template-columns:2.6rem 1fr;border-left:1px solid var(--rule)}
+  .f:last-child{border-left-color:transparent}
+  .f-rail{display:flex;justify-content:center;padding-top:1.7rem}
+  .f-dot{width:.6rem;height:.6rem;border-radius:50%;background:var(--signal);margin-left:-1px}
+  .f-body{padding:1.35rem 0 2rem;display:flex;flex-direction:column;gap:.8rem;min-width:0}
+  .f-num{font-family:ui-monospace,Consolas,monospace;font-size:.7rem;letter-spacing:.1em;
+         color:var(--ink-3);counter-increment:f}
+  .f-num::before{content:"발견 " counter(f)}
+  .f h3{font-size:1.14rem;font-weight:750;color:var(--ink);margin-top:.1rem}
+  .f p{color:var(--ink-2);font-size:.95rem;max-width:36rem}
+  .quote{border-left:2px solid var(--signal);padding-left:1rem;font-size:1.02rem;font-weight:650;
+         color:var(--ink);line-height:1.55}
 </style>
 
 <div class="wrap">
 
 <header>
-  <div class="eyebrow">A-M8 · Deadlock Matrix · 2026-09-02</div>
-  <h1>인덱스 하나가 만든 데드락</h1>
-  <p class="lede">푸시 발송 데드락의 원인을 가리려고 모델을 세 번 폐기하고 36회를 측정했다.
-  원인은 측정 대상 바깥에 있었다.</p>
+  <div class="eyebrow">장애 기록 · 공지 푸시 배치 · 약 3분</div>
+  <h1>99초 동안 잠긴 행 하나</h1>
+  <p class="lede">푸시 알림을 누른 회원가 콘텐츠 페이지를 못 봤다.
+  배치가 콘텐츠 한 건의 DB 행을 99초 동안 잠근 채 놔둔 탓이다.</p>
   <div class="meta">
-    <span><b>8</b>단계 추적</span>
-    <span><b>3</b>회 모델 폐기</span>
-    <span><b>36</b>회 최종 측정</span>
-    <span>MySQL 8.0 · 2 CPU / 2 GB</span>
+    <span>푸시 <b>8,540</b>건 정상 발송</span>
+    <span>락 <b>99초</b></span>
+    <span>사용자 대기 <b>50초</b> 후 500</span>
+    <span>데드락 <b>0</b>건 · 전부 락 대기</span>
   </div>
 </header>
 
 <section>
-  <h2>증상</h2>
-  <div class="prose">
-    <p>운영 중인 알림 서버에서 <strong>푸시 발송 데드락이 주 2~3회</strong> 발생했다.
-    발송 대상은 평균 1천 명 규모. 죽는 쪽은 배치가 아니라 사용자 요청이었다.</p>
-    <p>장애 대응이 우선이라 조치 세 가지를 <strong>한 번에</strong> 넣었고 0건이 됐다.
-    그래서 <strong>무엇이 실제로 효과가 있었는지 모른다.</strong></p>
-  </div>
-
-  <div class="did">
-    <dt>조치 ①</dt><dd>대상 조회를 트랜잭션 밖으로 분리</dd>
-    <dt>조치 ②</dt><dd>상태 갱신을 BATCH UPDATE 로 전환</dd>
-  </div>
-
-  <div class="prose">
-    <p>운영 시스템에서 데드락을 일부러 낼 수는 없다.
-    <strong>같은 구조를 실험 환경에 세우고 조치를 하나씩만 되돌려</strong> 기여도를 가르기로 했다.</p>
-  </div>
-
   <div class="verdict">
-    <div class="big">결론부터 — 조치 셋 다 아니었다.
-    <code>notification.request_id</code>에 인덱스가 없던 것이 원인이었다.</div>
-    <p>인덱스가 정상이면 12개 구성 중 11개가 데드락 0건이다. 인덱스 하나를 빼면 그 자리에서 34~46건이 난다.
-    아래는 거기까지 간 기록이다.</p>
+    <div class="big">UPDATE 자체는 수 ms다. 오래 잠근 게 아니라 <span style="color:var(--signal)">안 풀어준 것</span>이다.</div>
+    <p>콘텐츠 3건이 한 트랜잭션이었다. 첫 콘텐츠는 T+72s 에 자기 일이 다 끝났는데,
+    커밋은 뒤따르는 두 건의 발송까지 전부 끝난 T+171s에 일어났다.
+    그 99초 동안 그 행이 잠겨 있었고, <strong>푸시를 받고 들어온 회원들이 거기에 부딪혔다.</strong></p>
   </div>
 </section>
 
 <hr>
 
 <section>
-  <h2>추적 기록</h2>
+  <h2>그날의 3분</h2>
 
-  <div class="log">
+  <div class="tl">
+    <div class="tl-row-label">발송 — 콘텐츠 3건, 한 트랜잭션</div>
+    <div class="tl-track">
+      <div class="bar send" style="left:0%;width:41.5%">A 발송 · 8,540명 · 72초</div>
+      <div class="bar send" style="left:42.7%;width:37.4%">B 발송 · 65초</div>
+      <div class="bar send" style="left:81.3%;width:18.7%">C · 32초</div>
+    </div>
 
-    <div class="entry reject">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge reject">가설 기각</span>
-          <h3>배치 워커끼리 부딪히는 것 아닐까</h3></div>
-        <p>같은 테이블의 같은 행들을 워커마다 다른 순서로 잡으면 사이클이 생긴다.
-        8워커에 처리 순서를 섞어 넣었다.</p>
-        <div class="did">
-          <dt>결과</dt><dd>데드락률 <b>85%</b>, 3회 안정 재현</dd>
-          <dt>기각 사유</dt><dd>실제 사건은 <b>배치와 수신자</b>의 충돌이었다. 이 모델에는 사용자 워크로드가 아예 없다</dd>
-          <dt>배운 것</dt><dd>재현됐다고 맞는 모델은 아니다. 숫자가 크게 나오면 오히려 의심해야 했다</dd>
-        </div>
+    <div class="tl-row-label">A 행 잠금</div>
+    <div class="lock-track">
+      <div class="lock" style="left:42.1%;width:57.9%">🔒 완료 표시 UPDATE → 커밋까지 99초</div>
+    </div>
+
+    <div class="tl-row-label">푸시를 누르고 들어온 회원</div>
+    <div class="hits">
+      <span class="hit" style="left:48%">✕ 500</span>
+      <span class="hit" style="left:60%">✕ 500</span>
+      <span class="hit ok" style="left:72%">△ 19초</span>
+      <span class="hit" style="left:88%">✕ 500</span>
+    </div>
+
+    <div class="axis">
+      <span class="tick" style="left:0%">T+0s  </span>
+      <span class="tick" style="left:42.1%">T+72s </span>
+      <span class="tick" style="left:81.3%">T+139s</span>
+      <span class="tick" style="left:100%">T+171s</span>
+    </div>
+
+    <div class="tl-legend">
+      <span><i style="background:var(--accent)"></i>발송 (별도 트랜잭션 — 락 없음)</span>
+      <span><i style="background:var(--signal)"></i>A 행 잠금</span>
+      <span style="color:var(--signal)">✕ 50초 대기 후 500</span>
+      <span style="color:var(--calm)">△ 19초 대기 후 성공</span>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p>A는 T+72s 에 자기 발송이 끝났다. 완료 표시 UPDATE도 그때 했다.
+    <strong>그런데 커밋은 B와 C의 발송까지 전부 끝나야 일어난다.</strong>
+    3건 전체가 한 트랜잭션이기 때문이다.</p>
+    <p>다음 순서였던 B는 노출 창이 33초뿐이라 클릭이 도달하기 전에 락이 풀렸다.
+    <strong>첫 번째로 처리된 콘텐츠만 맞았다.</strong></p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>어떻게 좁혀 들어갔나</h2>
+
+  <div class="find-list">
+
+    <div class="f">
+      <div class="f-rail"><div class="f-dot"></div></div>
+      <div class="f-body">
+        <div class="f-num"></div>
+        <h3>데드락이 아니었다</h3>
+        <p>알림 발송 배치에서 나는 문제라 데드락부터 의심했다. 로그는 달랐다.</p>
+<pre>MySQLTransactionRollbackException: <b>Lock wait timeout exceeded</b>; try restarting transaction
+SQL: UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?</pre>
+        <p><strong>1213(데드락)이 아니라 1205(락 대기)다.</strong> 사이클이 없어도 나기 때문에
+        훨씬 쉽게 발생한다. 누군가 락을 오래 쥐고 있으면 그냥 타임아웃이다.
+        찾아야 할 것은 <b>사이클</b>이 아니라 <b>오래 쥔 트랜잭션</b>이었다.</p>
       </div>
     </div>
 
-    <div class="entry reject">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge reject">측정 불가</span>
-          <h3>배치와 수신자를 한 프로세스에서 흉내내다</h3></div>
-        <p>배치 스레드와 수신자 스레드를 한 JVM에 두고 돌렸다.
-        수신자 실패가 잡히기는 했는데, 그게 데드락인지 알 수 없었다.</p>
-        <div class="did">
-          <dt>문제</dt><dd>HikariCP 풀 하나를 양쪽이 공유한다. 배치가 커넥션을 오래 쥐면 수신자는 <b>커넥션을 못 얻어서</b> 실패한다 — 데드락이 아니라 풀 고갈이다</dd>
-          <dt>조치</dt><dd>서버를 <b>셋으로 분리</b>. 요청·수신자는 Node(mysql2), 배치는 JVM. 런타임까지 갈라서 풀·GC·스레드 모델을 물리적으로 분리했다</dd>
-        </div>
+    <div class="f">
+      <div class="f-rail"><div class="f-dot"></div></div>
+      <div class="f-body">
+        <div class="f-num"></div>
+        <h3>UPDATE는 빨랐다. 커밋이 늦었다</h3>
+        <p>완료 표시는 <code>UPDATE ... WHERE seq = ?</code> 한 줄이다. 인덱스를 타고 수 ms에 끝난다.
+        느린 쿼리를 찾으려 했다면 못 찾았을 것이다.</p>
+        <div class="quote">문제는 문장이 아니라 트랜잭션 경계였다.<br>
+        발송(무겁다)과 완료 표시(락을 잡는다)가 같은 트랜잭션에 있었다.</div>
+        <p>발송은 이미 <code>REQUIRES_NEW</code>로 분리해 둔 상태였다. <strong>완료 표시만 바깥에 남아 있었다.</strong></p>
       </div>
     </div>
 
-    <div class="entry find">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge find">계측 오류</span>
-          <h3>데드락 137건이 전부 &ldquo;락 타임아웃&rdquo;으로 집계됐다</h3></div>
-        <p>앱은 데드락 0건이라는데 <code>INNODB_METRICS</code>는 137을 가리켰다. 숫자가 정확히 일치해서 오분류임이 드러났다.</p>
-        <div class="did">
-          <dt>원인</dt><dd>Spring 예외 타입에 기댔다. <b>1213(데드락)과 1205(락 타임아웃)이 둘 다</b> <code>PessimisticLockingFailureException</code> 하위라 타입만으로는 갈리지 않는다</dd>
-          <dt>조치</dt><dd>예외 사슬에서 <b>벤더 에러코드</b>를 꺼내 판별. Node 쪽은 <code>err.errno</code>. 이후 InnoDB 카운터와 앱 집계를 매회 교차 검증했다</dd>
-          <dt>남는 값</dt><dd>계측을 먼저 검증하지 않았으면 이 뒤의 측정이 전부 무의미했다</dd>
-        </div>
+    <div class="f">
+      <div class="f-rail"><div class="f-dot"></div></div>
+      <div class="f-body">
+        <div class="f-num"></div>
+        <h3>배치가 자기 트래픽을 만들었다</h3>
+        <p>하필 그 99초에 사람이 몰린 것은 우연이 아니다.
+        <strong>푸시를 받은 사람이 곧 그 콘텐츠를 열 사람이다.</strong>
+        실제로 클릭은 푸시를 받고 20~90초 안에 들어왔다.</p>
+        <div class="quote">배치가 스스로, 자기가 잠근 행에 부딪힐 트래픽을 예약하는 구조였다.</div>
+        <p>푸시가 나간 뒤에도 락이 잡혀 있었다는 것이 핵심이다.
+        커밋을 먼저 하고 푸시를 나중에 보냈다면 도달 시점에 그 행은 이미 풀려 있었다.</p>
       </div>
     </div>
 
-    <div class="entry confirm">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge confirm">재현 성공</span>
-          <h3>수신자만 죽는다 — 그리고 FK가 보였다</h3></div>
-        <p>서버를 나누고 계측을 고치자 사건이 재현됐다. 데드락 <strong>46 / 45 / 48</strong>건, 3회 안정.
-        배치 롤백은 0이다.</p>
-        <div class="did">
-          <dt>victim</dt><dd>언제나 <b>수신자</b>. InnoDB는 undo가 적은 쪽을 죽인다 — 배치는 undo 1,384 / 수신자는 1</dd>
-          <dt>피해</dt><dd>배치는 재시도하면 그만이지만 수신자는 <b>로그인과 알림 확인이 실패</b>한다. 화면에서 에러를 본다</dd>
-          <dt>발견</dt><dd>원문에 <code>lock mode S locks rec but not gap waiting</code>. 배치 코드에 계정 테이블을 잠그는 문장이 <b>한 줄도 없는데</b> FK 검사가 잠그고 있었다</dd>
-        </div>
-
-<pre>*** (1) TRANSACTION:          <span class="dim">← 수신자</span>
-UPDATE notification SET read_at = NOW(6) WHERE id = 962
-*** (1) HOLDS THE LOCK(S):
-  table `member_account`  <b>lock_mode X</b>  ... asc tk-781967862 ;;   <span class="dim">토큰 갱신이 잡은 락</span>
-*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
-  table `notification`     lock_mode X waiting
-
-*** (2) TRANSACTION:          <span class="dim">← 배치 · undo 1384, row lock 5368</span>
-INSERT INTO notification (account_id, request_id, status, created_at)
-       VALUES (962, 3962, 'CREATED', NOW(6))
-*** (2) HOLDS THE LOCK(S):
-  table `notification`     lock_mode X
-*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
-  table `member_account`  <b>lock mode S locks rec but not gap waiting</b>   <span class="dim">← FK가 요구한 락</span>
-
-*** WE ROLL BACK TRANSACTION (1)</pre>
+    <div class="f">
+      <div class="f-rail"><div class="f-dot"></div></div>
+      <div class="f-body">
+        <div class="f-num"></div>
+        <h3>부수 작업 하나가 페이지 전체를 죽였다</h3>
+        <p>회원가 콘텐츠 상세를 열면 본문 조회는 <strong>5ms</strong>에 끝나 있었다.
+        그런데 조회수 <code>+1</code>이 같은 트랜잭션 안에 있어서, 그것 하나 때문에 응답 전체가 500이 됐다.</p>
+        <p>사용자가 보러 온 것은 본문이다. 조회수는 부수 작업이다.
+        <strong>부수 작업의 실패가 주 작업을 막는 구조</strong>였다.</p>
       </div>
     </div>
 
-    <div class="entry confirm">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge confirm">1차 측정</span>
-          <h3>조치를 하나씩 되돌려 보니 조회 분리는 효과가 없었다</h3></div>
-        <p>운영에서 밟은 순서를 그대로 변수로 만들었다.
-        ① Tasklet → ② chunk 전환 → ③ 조회를 트랜잭션 밖으로 → ④ 발송 방식 변경 세 가지.</p>
+    <div class="f">
+      <div class="f-rail"><div class="f-dot"></div></div>
+      <div class="f-body">
+        <div class="f-num"></div>
+        <h3>같은 병을 세 번 앓았다는 것을 알았다</h3>
+        <p>이 배치는 처음부터 이런 모습이 아니었다.</p>
         <div class="did">
-          <dt>재현 확인</dt><dd>V0 Tasklet <b>45</b> → V1 chunk 전환 <b>35</b>. <b>chunk로 바꿔도 안 없어진다</b> — 운영에서 겪은 것과 같다</dd>
-          <dt>이상 신호</dt><dd>V2(조회를 TX 밖으로) <b>40</b>. 이력서가 &ldquo;근본 조치&rdquo;라 부르는 것이 baseline과 구분되지 않는다</dd>
-          <dt>효과 있음</dt><dd>V3a(벌크로 묶기) <b>0</b>, V3b(알림 선생성) <b>0</b>, V8(FK 제거) <b>0</b></dd>
-          <dt>주의</dt><dd>V0가 실행마다 33~48로 흔들린다. 33~48은 노이즈 범위라 그 안의 값들은 서로 갈리지 않는다</dd>
+          <dt>처음</dt><dd>Tasklet — 건별 요청인데 <b>한 트랜잭션</b>으로 처리 → 락 발생</dd>
+          <dt>1차</dt><dd><code>REQUIRES_NEW</code>로 발송 분리 → <b>한동안 잠잠</b></dd>
+          <dt>재발</dt><dd>또 발생 → <b>chunk 방식으로 전환</b></dd>
+          <dt>이후</dt><dd>트랜잭션을 더 쪼갬</dd>
+          <dt>이번</dt><dd>완료 표시가 아직 바깥에 남아 있었다</dd>
         </div>
-        <p>여기서 결론을 냈다 — <em>&ldquo;락 보유 시간은 왕복 횟수가 지배한다&rdquo;</em>.
-        V3c는 인위적 지연을 전부 뺐는데도 36건이 났고, 왕복만 3회로 줄인 V3a는 0이었기 때문이다.
-        <strong>이 결론은 뒤에 폐기된다.</strong></p>
-      </div>
-    </div>
-
-    <div class="entry find">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge find">원인 발견</span>
-          <h3>V5가 뒤집혔다 — 격리수준이 아니라 인덱스였다</h3></div>
-        <p>1차에서 놓친 결함 하나를 고쳤다. V5(READ COMMITTED)의 격리수준이 수신자에만 걸리고
-        배치 트랜잭션에는 안 걸려 있었다. 양쪽에 걸고 다시 재니 <strong>43 → 0</strong>으로 뒤집혔다.</p>
-        <p>격리수준 하나로 40건이 0이 되는 건 과하다. <code>EXPLAIN</code>을 떠봤다.</p>
-
-<pre>EXPLAIN UPDATE notification SET status='SENT' WHERE request_id = 1;
-
-type=index   possible_keys=<b>NULL</b>   key=PRIMARY   rows=<b>3861</b></pre>
-
-        <div class="did">
-          <dt>결함</dt><dd><code>notification.request_id</code>에 <b>인덱스가 없다.</b> 한 건을 고치는 UPDATE가 테이블 3,861행을 훑는다</dd>
-          <dt>왜 락이 되나</dt><dd><b>REPEATABLE READ는 스캔한 행 전부에 next-key 락</b>을 건다. 단일 행 갱신이 사실상 테이블 전역 락이 된다. READ COMMITTED는 안 맞는 행을 즉시 풀어준다 — 그래서 V5가 0이 됐던 것이다</dd>
-          <dt>판정</dt><dd>V5=0은 격리수준 효과가 아니었다. <b>인덱스 누락으로 부풀려진 락 범위가 걷힌 것</b>이다. baseline 40 내외도 부풀려진 값이다</dd>
-        </div>
-      </div>
-    </div>
-
-    <div class="entry confirm">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge confirm">변수로 승격</span>
-          <h3>결함을 지우지 않고 측정 대상으로 만들었다</h3></div>
-        <p>인덱스를 추가하고 끝낼 수도 있었지만, <strong>인덱스 유무 자체를 노브로 분리</strong>했다.
-        그래야 &ldquo;인덱스 하나 빠뜨리면 데드락이 몇 배가 되는가&rdquo;가 숫자로 남는다.</p>
-        <div class="did">
-          <dt>추가</dt><dd><code>ALTER TABLE notification ADD INDEX idx_noti_request (request_id)</code> → <code>rows=3861</code>이 <code>rows=1</code>로</dd>
-          <dt>신규 변수</dt><dd><b>V10</b> — 다른 조건은 V1과 같고 인덱스만 없는 구성</dd>
-        </div>
-      </div>
-    </div>
-
-    <div class="entry find">
-      <div class="rail"><div class="dot"></div></div>
-      <div class="body-col">
-        <div class="hdr"><span class="stepno"></span><span class="badge find">원인 확정</span>
-          <h3>인덱스가 있으면 무엇을 해도 0, 없으면 무엇을 해도 난다</h3></div>
-        <p>12개 구성을 3회씩 36회 돌렸다.</p>
-        <div class="split">
-          <div class="cell">
-            <span class="k">인덱스 정상</span>
-            <span class="v zero">0</span>
-            <span class="n">11개 구성 × 3회 = 33회 전부</span>
-          </div>
-          <div class="cell">
-            <span class="k">인덱스 없음 · V10</span>
-            <span class="v hot">34~46</span>
-            <span class="n">3회 · 중앙 42</span>
-          </div>
-          <div class="cell">
-            <span class="k">배치 처리 시간</span>
-            <span class="v">&minus;30%</span>
-            <span class="n">11.8s → 6.1~9.0s</span>
-          </div>
-        </div>
-        <p>Tasklet이냐 chunk냐, 조회를 밖으로 뺐냐, 벌크로 묶었냐, FK가 있냐 —
-        <strong>인덱스가 있는 한 어느 것도 차이를 만들지 않았다.</strong></p>
+        <p><strong>네 조치가 전부 같은 축이다.</strong> 전부 &ldquo;트랜잭션을 더 잘게&rdquo;다.
+        축을 바꾼 적이 한 번도 없다.</p>
+        <div class="quote">&ldquo;한동안 문제가 발생하지 않음&rdquo;을 해결로 봤던 것이 가장 위험했다.<br>
+        확률적 사건에서 관측 부재는 해결의 증거가 아니다.</div>
+        <p>다른 날 있었던 자동 로그인 락 타임아웃 6건도 같은 계열이었다.
+        <code>member_account</code>를 배치가 잡고 있는 동안 로그인이 그 행을 건드린 것이다.
+        <strong>이번이 두 번째다.</strong></p>
       </div>
     </div>
 
@@ -361,123 +301,133 @@ type=index   possible_keys=<b>NULL</b>   key=PRIMARY   rows=<b>3861</b></pre>
 </section>
 
 <hr>
+
 <section>
-  <h2>측정 결과</h2>
-  <p class="prose">각 구성을 3회씩 돌렸다. ①~④는 운영에서 실제로 밟은 순서다.</p>
+  <h2>실험실에 다시 세웠다</h2>
+  <div class="prose">
+    <p>운영에서는 데드락을 일부러 낼 수 없다. 그래서 같은 구조를 실험 환경에 세웠다 —
+    배치는 콘텐츠 3건을 한 트랜잭션으로 돌고, 각 건은 발송(별도 트랜잭션) 뒤 완료 표시(바깥 트랜잭션)를 한다.
+    푸시를 받은 사용자는 그 콘텐츠로 들어온다.</p>
+    <p><strong>재현됐다.</strong> 실패는 3회 실행 내내 정확히 3건, 전부 락 대기(1205)다. 데드락은 0건.
+    운영 로그와 같은 증상이다.</p>
+  </div>
 
   <div class="scroll">
   <table>
     <thead><tr>
-      <th>#</th><th>구성</th>
-      <th class="num">1회</th><th class="num">2회</th><th class="num">3회</th>
-      <th>수신자 데드락</th><th class="num">소요</th>
+      <th>처방</th><th>설정</th>
+      <th class="num">조회 처리</th><th class="num">실패</th><th class="num">락 타임아웃</th><th>판정</th>
     </tr></thead>
     <tbody>
-      <tr><td class="vid">V0</td><td>① Tasklet — 최초 상태<span class="cfg">한 트랜잭션에서 통째 처리</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.7s</td></tr>
-      <tr><td class="vid">V1</td><td>② chunk 전환<span class="cfg">chunk = 트랜잭션, 조회는 그 안에서</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
-      <tr><td class="vid">V2</td><td>③ 조회를 트랜잭션 밖으로<span class="cfg">이력서가 근본 조치라 부르는 것</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
-      <tr><td class="vid">V3a</td><td>④a 벌크로 묶기<span class="cfg">건별 1,500회 → batch 3회</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.3s</td></tr>
-      <tr><td class="vid">V3b</td><td>④b 알림 선생성 · 상태만 UPDATE<span class="cfg">INSERT가 없으므로 FK S락도 없음</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.3s</td></tr>
-      <tr><td class="vid">V3c</td><td>④c 외부 API 호출을 트랜잭션 밖으로<span class="cfg">락을 쥔 채 기다리는 구간 제거</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.7s</td></tr>
-      <tr><td class="vid">V6</td><td>운영 최종 조합 ③+④a+④c<span class="cfg">실제로 도달한 상태</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.4s</td></tr>
-      <tr><td class="vid">V4</td><td>수신자 자원 순서 통일<span class="cfg">계정→알림을 알림→계정으로</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.3s</td></tr>
-      <tr><td class="vid">V5</td><td>READ COMMITTED<span class="cfg">격리수준을 배치·수신자 양쪽에 적용</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.7s</td></tr>
-      <tr><td class="vid">V8</td><td>FK 제거<span class="cfg">배치가 계정 행을 잠글 경로 차단</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.2s</td></tr>
-      <tr><td class="vid">V9</td><td>수신자 트랜잭션 분리<span class="cfg">토큰 갱신 / 알림 확인을 따로</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
-      <tr class="fired"><td class="vid">V10</td><td><strong>request_id 인덱스 없음</strong><span class="cfg">그 외 조건은 V1과 동일</span></td><td class="num">34</td><td class="num">46</td><td class="num">42</td><td><span class="pill hot">34~46 · 중앙 42</span></td><td class="num">11.8s</td></tr>
+      <tr class="fired"><td class="vid">AS-IS</td><td>사건 당시<span class="cfg">완료표시 일괄 커밋 · 조회수 본문과 같은 TX</span></td>
+        <td class="num">882</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">재현</span></td></tr>
+      <tr><td class="vid">①</td><td><strong>완료 표시를 건별 즉시 커밋</strong><span class="cfg">락이 바로 풀린다</span></td>
+        <td class="num">2,377</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
+      <tr class="fired"><td class="vid">②</td><td>조회수를 본문 조회에서 분리<span class="cfg">별도 트랜잭션으로</span></td>
+        <td class="num">832</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">효과 없음</span></td></tr>
+      <tr><td class="vid">③</td><td><strong>커밋 후 푸시</strong><span class="cfg">도달 시점에 락이 이미 풀려 있다</span></td>
+        <td class="num">2,333</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
+      <tr class="fired"><td class="vid">④</td><td>lock_wait_timeout 50s → 5s<span class="cfg">빨리 실패시키기</span></td>
+        <td class="num">865</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">피해만 축소</span></td></tr>
+      <tr><td class="vid">①+②</td><td>건별 커밋 + 조회수 분리</td>
+        <td class="num">2,364</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
     </tbody>
   </table>
   </div>
+  <p style="font-size:.82rem;color:var(--ink-3)">각 구성 3회 반복, 중앙값. 실패 건수는 3회 내내 동일했다.</p>
 
-  <div class="note warn">
-    <p><strong>0은 불가능이 아니라 이 부하에서 재현되지 않음을 뜻한다.</strong>
-    부하를 더 올리면 인덱스가 정상이어도 날 수 있다. 다만 인덱스 하나 차이로 0과 42가 갈린다는 것은 확실하다.</p>
-  </div>
-</section>
+  <h3>① 완료 표시 건별 커밋 — 직접 원인</h3>
+  <div class="prose"><p>실패가 0이 된다. 락을 잡는 문장이 곧바로 커밋되니 부딪힐 대상이 사라진다.
+  완료 표시는 콘텐츠 <strong>3건</strong>뿐이라 건별 커밋해도 커밋 3번이다. 비용이 사실상 없다.</p></div>
 
-<hr>
-
-<section>
-  <h2>인덱스를 고치기 전에는 이렇게 보였다</h2>
-  <p class="prose">같은 구성들을 결함 있는 스키마에서 재면 전혀 다른 그림이 나온다.
-  그때는 왕복 횟수가 지배항이라는 결론을 냈었다. 인덱스를 고치자 그 결론이 통째로 사라졌다.</p>
-
-  <div class="scroll">
-  <table>
-    <thead><tr><th>#</th><th>구성</th><th class="num">인덱스 없음</th><th class="num">인덱스 있음</th><th>차이</th></tr></thead>
-    <tbody>
-      <tr><td class="vid">V0</td><td>Tasklet</td><td class="num">41 / 48 / 41</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
-      <tr><td class="vid">V1</td><td>chunk 전환</td><td class="num">38 / 43 / 49</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
-      <tr><td class="vid">V2</td><td>조회를 TX 밖으로</td><td class="num">43 / 45 / 48</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
-      <tr><td class="vid">V3c</td><td>외부 API를 TX 밖으로</td><td class="num">44 / 52 / 40</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
-      <tr><td class="vid">V3a</td><td>벌크로 묶기</td><td class="num">0 / 0 / 0</td><td class="num">0 / 0 / 0</td><td><span class="pill">양쪽 0</span></td></tr>
-      <tr><td class="vid">V8</td><td>FK 제거</td><td class="num">0 / 0 / 0</td><td class="num">0 / 0 / 0</td><td><span class="pill">양쪽 0</span></td></tr>
-    </tbody>
-  </table>
-  </div>
-
+  <h3>② 조회수 분리 — 단독으로는 안 된다</h3>
   <div class="prose">
-    <p>결함 있는 스키마에서도 이미 한 가지는 분명했다 — <strong>V1(38/43/49)과 V2(43/45/48)가 완전히 중첩</strong>한다.
-    조회를 트랜잭션 밖으로 빼도 값이 내려가지 않았다. 쓰기 왕복은 그대로 남기 때문이다.
-    이 관찰만은 인덱스와 무관하다. 두 구성은 읽기 위치만 다르고 쓰기 패턴이 같다.</p>
+    <p><strong>실패 3건이 그대로다.</strong> 조회수를 별도 트랜잭션으로 빼도 여전히 <strong>같은 행</strong>을 기다린다.
+    대기 지점을 옮긴 것이지 없앤 것이 아니다.</p>
+    <p>그렇다고 무의미하지는 않다. 이 조치의 값은 <em>&ldquo;다른 무엇이 그 행을 오래 잡아도 본문은 보인다&rdquo;</em>는
+    <strong>내성</strong>이다. 이 사건의 해결이 아니라 다음 사건의 예방이다.</p>
   </div>
+
+  <h3>③ 커밋 후 푸시 — 범위가 가장 넓다</h3>
+  <div class="prose"><p>①과 같은 효과인데, 이건 이 배치 하나가 아니라
+  <strong>모든 발송 배치에 적용되는 원칙</strong>이다 — <em>외부에 알림을 보내기 전에 내부 락을 다 풀어라.</em></p></div>
+
+  <h3>④ 타임아웃 단축 — 실패를 못 없앤다</h3>
+  <div class="prose"><p>실패 3건은 그대로고, 사용자가 50초 대신 5초 뒤에 에러를 본다.
+  다만 <strong>커넥션을 45초 덜 문다.</strong> 락 대기가 길어지면 커넥션 풀 고갈로 번져
+  무관한 API까지 죽는데, 그 위험은 줄어든다. 근본은 아니고 피해 억제책이다.</p></div>
 </section>
 
 <hr>
 
-
 <section>
-  <h2>그래서 이력서는</h2>
-
-  <h3>현재 서술</h3>
-  <div class="note">
-    <p>주 2~3회 발생하던 푸시 알림 발송 데드락. 대상 조회와 발송 처리가 한 트랜잭션에 묶여 트랜잭션이 길어진 것이 원인.
-    <strong>조회를 트랜잭션 밖으로 분리해 락을 쥔 채 대기하는 구간 자체를 제거한 것이 근본 조치</strong>였고,
-    상태 갱신을 BATCH UPDATE로 전환해 락 점유 시간을 추가로 줄임 → 0건</p>
-  </div>
+  <h2>측정하고 나서야 보인 것 둘</h2>
 
   <div class="split">
     <div class="cell">
-      <span class="k">말할 수 있다</span>
-      <span class="v" style="font-size:1.05rem;font-weight:700;line-height:1.5">동일 구조를 재현했을 때<br>락 범위가 지배적이었다</span>
-      <span class="n">조회 위치도 chunk 전환도 차이를 만들지 않았다</span>
+      <span class="k">진짜 피해</span>
+      <span class="v hot">2.7배</span>
+      <span class="n">조회 처리량 882 → 2,377건<br>같은 시간, 같은 부하</span>
     </div>
     <div class="cell">
-      <span class="k">말할 수 없다</span>
-      <span class="v" style="font-size:1.05rem;font-weight:700;line-height:1.5">운영 데드락의 원인도<br>인덱스였다</span>
-      <span class="n">회사 스키마를 확인하지 않았다</span>
+      <span class="k">p95로 본 차이</span>
+      <span class="v">없음</span>
+      <span class="n">전 구성 174~208ms<br>대시보드에 안 잡힌다</span>
     </div>
-  </div>
-
-  <div class="note warn">
-    <p><strong>다음 확인 하나로 갈린다.</strong> 운영에서 그 UPDATE가 인덱스를 탔는가?</p>
-    <p>안 탔다면 조치들은 증상을 다루고 있었을 수 있고, 이력서의 &ldquo;근본 조치&rdquo;는 다시 써야 한다.
-    탔다면 이 실험 결과는 실험 환경 한정으로 남기고 운영 서술은 그대로 둔다.</p>
   </div>
 
   <div class="prose">
-    <p>어느 쪽이든 <strong>새로 생긴 이야기</strong>가 있다.
-    데드락을 만나면 트랜잭션 길이부터 보게 되는데, 실제로 지배한 것은 <strong>락 범위</strong>였다.
-    실행계획을 먼저 떠보는 것이 순서였다.</p>
+    <p><strong>실패한 3건이 피해의 전부가 아니었다.</strong>
+    같은 시간에 같은 부하를 넣었는데 처리된 조회가 882건과 2,377건으로 갈린다.
+    락이 걸린 동안 그 콘텐츠 조회가 <strong>통째로 느려졌다.</strong>
+    에러를 본 3명 말고도 그 시간에 들어온 사람들이 전부 기다렸다.</p>
+    <p>그리고 <strong>이 사고는 p95로는 보이지 않는다.</strong> 전 구성이 174~208ms로 비슷하다.
+    실패한 3건이 꼬리라 백분위에 안 잡힌다. p95 대시보드만 보고 있으면 이런 사고는 지나간다.
+    <strong>처리량과 최대 대기를 함께 봐야 한다.</strong></p>
   </div>
 </section>
 
 <hr>
 
 <section>
-  <h2>남은 검증</h2>
+  <h2>남은 위험</h2>
+  <div class="note warn">
+    <p><strong>중복 발송.</strong> 발송은 이미 커밋됐는데 바깥 트랜잭션이 롤백되면 완료 표시만 취소된다.
+    대상 조회 조건이 &ldquo;완료 표시 없는 것&rdquo;이라, 다음 실행이 같은 콘텐츠를 또 보낸다.
+    A면 <strong>8,540건이 두 번</strong> 나간다.</p>
+    <p>①(건별 커밋)로 창은 좁아지지만 <strong>없어지지는 않는다.</strong>
+    발송했다는 사실과 완료 표시가 같은 원자 단위가 아니기 때문이다.
+    순서를 뒤집어(먼저 기록 → 커밋 → 발송) 닫아야 한다.</p>
+  </div>
+  <div class="note">
+    <p><strong>조회수 핫 로우.</strong> ②로 락 시간은 짧아지지만, 인기 콘텐츠 하나에
+    8,540명이 20~90초 안에 몰리면 그 행에 쓰기가 직렬화된다. 락이 아니라 <strong>지연으로 다시 온다.</strong>
+    카운터는 행 UPDATE가 아니라 버퍼링·샤딩으로 빼는 것이 맞다.</p>
+  </div>
+  <div class="note">
+    <p><strong>관측.</strong> 지금은 사고가 나야 안다.
+    <code>information_schema.innodb_trx</code>에서 10초 넘게 열린 트랜잭션을 알람으로 걸면 사전에 잡힌다.</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>배운 것</h2>
   <ul>
-    <li><strong>0의 의미를 확정한다</strong> — 인덱스가 정상인 상태에서 부하를 올려 데드락이 다시 나는 지점을 찾는다. 지금의 0은 &ldquo;불가능&rdquo;이 아니라 &ldquo;이 부하에서 재현되지 않음&rdquo;이다</li>
-    <li><strong>운영 UPDATE의 실행계획 확인</strong> — 이력서 서술 수정 여부가 여기 걸린다</li>
-    <li><strong>화면에서 재현</strong> — 요청 서버와 수신자 서버에 대시보드를 붙여 직접 눌러 데드락을 만들고, 수신자가 보는 실패 화면을 남긴다</li>
+    <li><strong>느린 쿼리를 찾으면 못 찾는다.</strong> UPDATE는 수 ms였다. 문제는 문장이 아니라 트랜잭션 경계였다</li>
+    <li><strong>&ldquo;한동안 안 남&rdquo;은 해결이 아니다.</strong> 재발했다는 사실 자체가 확률만 낮췄다는 증거다</li>
+    <li><strong>같은 축을 반복해 조이지 마라.</strong> 네 번의 조치가 전부 &ldquo;트랜잭션을 더 잘게&rdquo;였다. 축을 바꿔야 할 때를 놓쳤다</li>
+    <li><strong>락을 잡는 가벼운 작업과 락을 안 잡는 무거운 작업을 같은 트랜잭션에 두지 마라.</strong> 커밋 비용은 건수에, 락 손실은 트랜잭션 길이에 비례한다</li>
+    <li><strong>외부에 알림을 보내기 전에 내부 락을 다 풀어라.</strong> 발송 배치는 자기가 부딪힐 트래픽을 스스로 만든다</li>
+    <li><strong>부수 작업이 주 작업을 막게 두지 마라.</strong> 본문은 5ms에 끝나 있었다</li>
   </ul>
 </section>
 
 <footer>
-  <p>실험 환경의 결과이며 운영 환경의 실측이 아니다.
-  고정값 — MySQL 8.0 (2 CPU / 2 GB), <code>innodb_lock_wait_timeout=5s</code>,
-  테넌트 5 · 계정 1,000 · 발송요청 4,000 · 외부 API 지연 400µs, 수신자 동시 12 / 간격 3ms.
-  배치는 Java 21 · Spring Batch · JPA, 요청과 수신자는 Node(mysql2)로 커넥션 풀을 분리했다.</p>
+  <p>운영 로그·APM 트레이스·DB 타임스탬프로 타임라인을 복원했고, 동일 구조를 실험 환경에 재현해 처방별로 측정했다.
+  처방 비교 수치는 실험 환경의 결과이며 운영 환경의 실측이 아니다.
+  실험 구성 — MySQL 8.0 (2 CPU / 2 GB), 콘텐츠 3건 · 건당 발송 8초 · 조회 동시 12, 각 구성 3회 반복.</p>
 </footer>
 
 </div>
