@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS notification (
     sent_at    DATETIME(6) NULL,
     read_at    DATETIME(6) NULL,
     CONSTRAINT fk_noti_account FOREIGN KEY (account_id) REFERENCES member_account (id),
-    KEY idx_noti_account (account_id)
+    KEY idx_noti_account (account_id),
+    KEY idx_noti_request (request_id)
 ) ENGINE=InnoDB;
 
 -- ─────────────────────── 실험 조율 (서버 3개 동기화) ───────────────────────

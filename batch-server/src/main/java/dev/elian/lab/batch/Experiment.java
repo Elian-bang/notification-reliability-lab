@@ -74,7 +74,8 @@ public class Experiment implements CommandLineRunner {
                 v1.withReceiverUnify().id("V4", "수신자 순서 통일"),
                 v1.isolation(Knobs.RC).id("V5", "READ COMMITTED"),
                 v1.noForeignKey().id("V8", "FK 제거"),
-                v1.withReceiverSplitTx().id("V9", "수신자 TX 분리")
+                v1.withReceiverSplitTx().id("V9", "수신자 TX 분리"),
+                v1.noRequestIndex().id("V10", "request_id 인덱스 없음")
         );
     }
 
@@ -100,6 +101,7 @@ public class Experiment implements CommandLineRunner {
 
         control.stop();
         seeder.setForeignKey(k.foreignKey());
+        seeder.setRequestIndex(k.requestIndex());
         seeder.reset(k, tenants, accountsPerTenant, requests);
         control.start(runId, k);
         Thread.sleep(warmup);                     // 수신자 부하가 붙을 시간

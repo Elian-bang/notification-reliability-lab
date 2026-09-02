@@ -23,6 +23,7 @@ public record Knobs(
 
         // ── 스키마·DB ──
         boolean foreignKey,      // notification → member_account FK 유지
+        boolean requestIndex,    // notification.request_id 인덱스 유지 (없으면 UPDATE 가 풀스캔)
         String isolation
 ) {
     public static final String RR = "REPEATABLE READ";
@@ -32,25 +33,26 @@ public record Knobs(
     public static Knobs v0() {
         return new Knobs("V0", "① Tasklet (최초)",
                 JobShape.TASKLET, 500, true, SendMode.PER_ROW, true,
-                false, false, true, RR);
+                false, false, true, true, RR);
     }
 
     public Knobs id(String id, String label) {
         return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx,
-                receiverUnify, receiverTxSplit, foreignKey, isolation);
+                receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation);
     }
-    public Knobs shape(JobShape s)      { return new Knobs(id, label, s, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, isolation); }
-    public Knobs chunkSize(int n)       { return new Knobs(id, label, shape, n, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, isolation); }
-    public Knobs queryOutsideTx()       { return new Knobs(id, label, shape, chunkSize, false, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, isolation); }
-    public Knobs sendMode(SendMode m)   { return new Knobs(id, label, shape, chunkSize, queryInTx, m, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, isolation); }
-    public Knobs apiCallOutsideTx()     { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, false, receiverUnify, receiverTxSplit, foreignKey, isolation); }
-    public Knobs withReceiverUnify()    { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, true, receiverTxSplit, foreignKey, isolation); }
-    public Knobs withReceiverSplitTx()  { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, true, foreignKey, isolation); }
-    public Knobs noForeignKey()         { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, false, isolation); }
-    public Knobs isolation(String i)    { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, i); }
+    public Knobs shape(JobShape s)      { return new Knobs(id, label, s, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs chunkSize(int n)       { return new Knobs(id, label, shape, n, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs queryOutsideTx()       { return new Knobs(id, label, shape, chunkSize, false, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs sendMode(SendMode m)   { return new Knobs(id, label, shape, chunkSize, queryInTx, m, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs apiCallOutsideTx()     { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, false, receiverUnify, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs withReceiverUnify()    { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, true, receiverTxSplit, foreignKey, requestIndex, isolation); }
+    public Knobs withReceiverSplitTx()  { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, true, foreignKey, requestIndex, isolation); }
+    public Knobs noForeignKey()         { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, false, requestIndex, isolation); }
+    public Knobs isolation(String i)    { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, requestIndex, i); }
+    public Knobs noRequestIndex()       { return new Knobs(id, label, shape, chunkSize, queryInTx, sendMode, apiCallInTx, receiverUnify, receiverTxSplit, foreignKey, false, isolation); }
 
     public String describe() {
-        return "%s%s / 조회 %s / 발송 %s / API %s / 수신자 %s%s / FK %s / %s".formatted(
+        return "%s%s / 조회 %s / 발송 %s / API %s / 수신자 %s%s / FK %s%s / %s".formatted(
                 shape,
                 shape == JobShape.CHUNK ? "(" + chunkSize + ")" : "",
                 queryInTx ? "TX내" : "TX밖",
@@ -59,6 +61,7 @@ public record Knobs(
                 receiverUnify ? "A→B" : "B→A",
                 receiverTxSplit ? "+TX분리" : "",
                 foreignKey ? "O" : "X",
+                requestIndex ? "" : " / req인덱스없음",
                 isolation);
     }
 }

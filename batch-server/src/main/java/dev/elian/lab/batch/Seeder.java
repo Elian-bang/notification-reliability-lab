@@ -54,6 +54,20 @@ public class Seeder {
         }
     }
 
+    /**
+     * V10 검증용 — notification.request_id 인덱스를 붙였다 뗀다.
+     *
+     * <p>없으면 { UPDATE ... WHERE request_id = ?} 가 테이블 전체를 스캔하고,
+     * REPEATABLE READ 에서는 스캔한 행 전부에 next-key 락이 걸린다.
+     * 단일 행 갱신이 사실상 테이블 전역 락이 된다.
+     */
+    public void setRequestIndex(boolean enabled) {
+        try {
+            if (enabled) jdbc.execute("ALTER TABLE notification ADD INDEX idx_noti_request (request_id)");
+            else         jdbc.execute("ALTER TABLE notification DROP INDEX idx_noti_request");
+        } catch (RuntimeException ignored) { /* 이미 그 상태 */ }
+    }
+
     /** V8 검증용 — FK 를 붙였다 뗀다. */
     public void setForeignKey(boolean enabled) {
         try {

@@ -1,0 +1,372 @@
+<title>인덱스 하나가 만든 데드락</title>
+<style>
+  :root{
+    --ground:#f2f4f7; --surface:#ffffff; --surface-2:#e9edf2; --surface-3:#dfe5ec;
+    --ink:#131922; --ink-2:#414b5a; --ink-3:#6b7686;
+    --rule:#d2d9e2; --rule-strong:#b6c0cd;
+    --accent:#2f4f8f; --signal:#a35a0c; --signal-bg:#fbf0e2; --calm:#22655a; --calm-bg:#e6f1ee;
+    --shadow:0 1px 2px rgba(19,25,34,.06), 0 8px 24px -12px rgba(19,25,34,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0d121a; --surface:#141b25; --surface-2:#1b2431; --surface-3:#222d3b;
+      --ink:#e0e6ef; --ink-2:#a8b4c4; --ink-3:#76829a;
+      --rule:#28313e; --rule-strong:#3a4655;
+      --accent:#82a1e4; --signal:#e2a75f; --signal-bg:#2b2114; --calm:#5ec1a9; --calm-bg:#122720;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 28px -14px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0d121a; --surface:#141b25; --surface-2:#1b2431; --surface-3:#222d3b;
+    --ink:#e0e6ef; --ink-2:#a8b4c4; --ink-3:#76829a;
+    --rule:#28313e; --rule-strong:#3a4655;
+    --accent:#82a1e4; --signal:#e2a75f; --signal-bg:#2b2114; --calm:#5ec1a9; --calm-bg:#122720;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 28px -14px rgba(0,0,0,.7);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+    font-size:16px; line-height:1.72; letter-spacing:-.005em; -webkit-font-smoothing:antialiased;
+  }
+  .mono,code,kbd,th,.num,.vid,.eyebrow{
+    font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    font-variant-numeric:tabular-nums;
+  }
+  .wrap{max-width:60rem;margin:0 auto;padding:0 1.5rem 6rem}
+  .prose{max-width:38rem}
+  h1,h2,h3{text-wrap:balance;letter-spacing:-.022em;line-height:1.25;margin:0}
+  a{color:var(--accent)}
+  hr{border:0;border-top:1px solid var(--rule);margin:0}
+  header{border-bottom:1px solid var(--rule);margin-bottom:3.5rem;padding:3.5rem 0 2.25rem}
+  .eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;color:var(--ink-3)}
+  h1{font-size:clamp(2rem,5vw,3rem);font-weight:800;margin:.9rem 0 1.1rem}
+  .lede{font-size:1.15rem;color:var(--ink-2);max-width:34rem}
+  .meta{display:flex;flex-wrap:wrap;gap:.5rem 1.75rem;margin-top:2rem;font-size:.8rem;color:var(--ink-3)}
+  .meta b{color:var(--ink-2);font-weight:600}
+  section{display:flex;flex-direction:column;gap:1.15rem;margin-bottom:4rem}
+  h2{font-size:1.5rem;font-weight:750;margin-top:.5rem}
+  h3{font-size:1.02rem;font-weight:700;color:var(--ink-2)}
+  p{margin:0}
+  .prose p + p{margin-top:.9rem}
+  strong{font-weight:700}
+  .verdict{
+    background:var(--surface);border:1px solid var(--rule-strong);border-left:3px solid var(--signal);
+    border-radius:2px;padding:1.6rem 1.75rem;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:.9rem
+  }
+  .verdict .big{font-size:1.3rem;font-weight:750;line-height:1.45;letter-spacing:-.02em}
+  .verdict p{color:var(--ink-2);font-size:.96rem}
+  .split{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+  .cell{background:var(--surface);padding:1.15rem 1.25rem;display:flex;flex-direction:column;gap:.35rem}
+  .cell .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}
+  .cell .v{font-size:1.9rem;font-weight:750;line-height:1.1}
+  .cell .n{font-size:.82rem;color:var(--ink-3)}
+  .v.zero{color:var(--calm)} .v.hot{color:var(--signal)}
+  .scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:2px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:44rem}
+  th{
+    text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;font-weight:600;
+    color:var(--ink-3);padding:.75rem .9rem;border-bottom:1px solid var(--rule-strong);
+    white-space:nowrap;background:var(--surface-2)
+  }
+  td{padding:.7rem .9rem;border-bottom:1px solid var(--rule);vertical-align:top}
+  tbody tr:last-child td{border-bottom:0}
+  td.num,th.num{text-align:right}
+  .vid{font-weight:700;font-size:.84rem;white-space:nowrap}
+  .cfg{color:var(--ink-3);font-size:.78rem;display:block;margin-top:.15rem}
+  tr.fired{background:var(--signal-bg)}
+  tr.fired .vid{color:var(--signal)}
+  .pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.74rem;font-weight:700;background:var(--calm-bg);color:var(--calm)}
+  .pill.hot{background:var(--surface-3);color:var(--signal);border:1px solid var(--signal)}
+  .cycle{display:flex;flex-direction:column;gap:0;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+  .step{display:grid;grid-template-columns:2.5rem 1fr;background:var(--surface);border-bottom:1px solid var(--rule)}
+  .step:last-child{border-bottom:0}
+  .step .i{display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;background:var(--surface-2);color:var(--ink-3);border-right:1px solid var(--rule)}
+  .step .b{padding:.8rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+  .who{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}
+  .act{font-size:.88rem}
+  .step.block{background:var(--signal-bg)}
+  .step.block .i{background:var(--signal);color:var(--surface);border-right-color:var(--signal)}
+  pre{margin:0;background:var(--surface-2);border:1px solid var(--rule);border-radius:2px;padding:1.1rem 1.25rem;overflow-x:auto;font-size:.79rem;line-height:1.65;color:var(--ink-2)}
+  pre b{color:var(--signal);font-weight:700}
+  pre i{color:var(--calm);font-style:normal;font-weight:700}
+  pre .dim{opacity:.65}
+  code{font-size:.88em;background:var(--surface-2);padding:.1rem .32rem;border-radius:2px;border:1px solid var(--rule)}
+  pre code{background:none;border:0;padding:0}
+  .note{border-left:2px solid var(--rule-strong);padding:.15rem 0 .15rem 1.1rem;color:var(--ink-2);font-size:.94rem;display:flex;flex-direction:column;gap:.6rem}
+  .note.warn{border-left-color:var(--signal)}
+  ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.45rem}
+  li::marker{color:var(--ink-3)}
+  footer{border-top:1px solid var(--rule);padding-top:1.5rem;color:var(--ink-3);font-size:.82rem}
+  ::selection{background:var(--accent);color:var(--ground)}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">A-M8 · Deadlock Matrix · 2026-09-02</div>
+  <h1>인덱스 하나가 만든 데드락</h1>
+  <p class="lede">푸시 발송 데드락을 없앤 조치들 중 무엇이 진짜였는지 가리려고 12개 구성을 3회씩 측정했다.
+  답은 측정 대상 바깥에 있었다.</p>
+  <div class="meta">
+    <span><b>36</b>회 실행</span>
+    <span><b>12</b>개 구성 × 3회</span>
+    <span>MySQL 8.0 · 2 CPU / 2 GB</span>
+    <span>계정 1,000 · 발송요청 4,000</span>
+    <span>수신자 동시 12</span>
+  </div>
+</header>
+
+<section>
+  <div class="verdict">
+    <div class="big">인덱스가 정상이면 12개 구성 중 11개가 데드락 0건이다.
+    인덱스 하나를 빼면 그 자리에서 34~46건이 난다.</div>
+    <p>Tasklet이냐 chunk냐, 조회를 트랜잭션 밖으로 뺐냐, 벌크로 묶었냐, FK가 있냐 —
+    <code>notification.request_id</code>에 인덱스가 있는 한 <strong>어느 것도 차이를 만들지 않았다</strong>.
+    인덱스를 떼는 순간에만 데드락이 났다.</p>
+  </div>
+
+  <div class="split">
+    <div class="cell">
+      <span class="k">인덱스 정상</span>
+      <span class="v zero">0</span>
+      <span class="n">11개 구성 × 3회 = 33회 전부</span>
+    </div>
+    <div class="cell">
+      <span class="k">인덱스 없음 (V10)</span>
+      <span class="v hot">34~46</span>
+      <span class="n">3회 · 중앙 42</span>
+    </div>
+    <div class="cell">
+      <span class="k">배치 처리 시간</span>
+      <span class="v">−30%</span>
+      <span class="n">11.8s → 6.1~9.0s</span>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>왜 인덱스가 락 문제가 되나</h2>
+  <div class="prose">
+    <p>배치는 발송을 끝내고 <code>UPDATE notification SET status='SENT' WHERE request_id = ?</code>로
+    한 건을 갱신한다. <code>request_id</code>에 인덱스가 없으면 이 문장이 테이블 전체를 훑는다.</p>
+  </div>
+
+<pre>EXPLAIN UPDATE notification SET status='SENT' WHERE request_id = 1;
+
+<b>인덱스 없음</b>   type=index   possible_keys=NULL              key=PRIMARY            rows=<b>3861</b>
+<i>인덱스 있음</i>   type=range   possible_keys=idx_noti_request  key=idx_noti_request   rows=<i>1</i></pre>
+
+  <div class="prose">
+    <p><strong>REPEATABLE READ에서는 스캔한 행 전부에 next-key 락이 걸린다.</strong>
+    한 건을 고치려는 문장이 알림 테이블을 사실상 통째로 잠근다.
+    그 상태로 외부 채널사 응답을 기다리니, 그사이 접속한 수신자는 어느 알림을 열어도 배치와 부딪힌다.</p>
+    <p>인덱스를 붙이면 락 범위가 3,861행에서 1행으로 줄어든다. 부딪힐 확률이 사라진다.</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>부딪히는 순간</h2>
+  <div class="prose">
+    <p>배치는 <code>member_account</code>를 갱신하는 코드가 한 줄도 없다.
+    그런데 알림을 INSERT할 때 FK 검사가 부모 행에 S락을 요청한다.
+    수신자는 로그인하면서 그 행에 X락을 쥔다.</p>
+  </div>
+
+  <div class="cycle">
+    <div class="step">
+      <div class="i mono">1</div>
+      <div class="b"><span class="who">배치</span><span class="act"><code>UPDATE notification</code> — 알림 행에 X락 (인덱스가 없으면 3,861행)</span></div>
+    </div>
+    <div class="step">
+      <div class="i mono">2</div>
+      <div class="b"><span class="who">수신자</span><span class="act"><code>UPDATE member_account</code> — 토큰 갱신이 계정 행에 X락</span></div>
+    </div>
+    <div class="step block">
+      <div class="i mono">3</div>
+      <div class="b"><span class="who">배치 · 대기</span><span class="act"><code>INSERT notification</code> → FK가 계정 행에 <strong>S락</strong>을 요구 → 수신자가 쥐고 있음</span></div>
+    </div>
+    <div class="step block">
+      <div class="i mono">4</div>
+      <div class="b"><span class="who">수신자 · 대기</span><span class="act"><code>UPDATE notification</code> 읽음 처리 → 배치가 쥐고 있음</span></div>
+    </div>
+    <div class="step">
+      <div class="i mono">X</div>
+      <div class="b"><span class="who">InnoDB</span><span class="act">사이클 감지. undo가 적은 쪽을 죽인다 — <strong>언제나 수신자</strong></span></div>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p>배치는 36회 실행 내내 롤백이 0이었다. 죽는 쪽은 항상 수신자다.
+    배치는 재시도하면 그만이지만 <strong>수신자는 로그인이나 알림 확인이 실패한다.</strong> 화면에서 에러를 본다.</p>
+  </div>
+
+  <h3>실측 원문 — SHOW ENGINE INNODB STATUS</h3>
+<pre>*** (1) TRANSACTION:          <span class="dim">← 수신자</span>
+UPDATE notification SET read_at = NOW(6) WHERE id = 962
+*** (1) HOLDS THE LOCK(S):
+  table `member_account`  <b>lock_mode X</b>  ... asc tk-781967862 ;;   <span class="dim">토큰 갱신이 잡은 락</span>
+*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
+  table `notification`     lock_mode X waiting
+
+*** (2) TRANSACTION:          <span class="dim">← 배치 · undo 1384, row lock 5368</span>
+INSERT INTO notification (account_id, request_id, status, created_at)
+       VALUES (962, 3962, 'CREATED', NOW(6))
+*** (2) HOLDS THE LOCK(S):
+  table `notification`     lock_mode X
+*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+  table `member_account`  <b>lock mode S locks rec but not gap waiting</b>   <span class="dim">← FK가 요구한 락</span>
+
+*** WE ROLL BACK TRANSACTION (1)</pre>
+
+  <div class="note">
+    <p>배치 코드에 <code>member_account</code>를 잠그는 문장은 없다. <code>lock mode S</code>는 FK 검사가 만든 것이다.
+    <strong>추측이 아니라 원문에 찍힌 값이다.</strong></p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>측정 결과</h2>
+  <p class="prose">각 구성을 3회씩 돌렸다. ①~④는 운영에서 실제로 밟은 순서다.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>#</th><th>구성</th>
+      <th class="num">1회</th><th class="num">2회</th><th class="num">3회</th>
+      <th>수신자 데드락</th><th class="num">소요</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="vid">V0</td><td>① Tasklet — 최초 상태<span class="cfg">한 트랜잭션에서 통째 처리</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.7s</td></tr>
+      <tr><td class="vid">V1</td><td>② chunk 전환<span class="cfg">chunk = 트랜잭션, 조회는 그 안에서</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
+      <tr><td class="vid">V2</td><td>③ 조회를 트랜잭션 밖으로<span class="cfg">이력서가 근본 조치라 부르는 것</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
+      <tr><td class="vid">V3a</td><td>④a 벌크로 묶기<span class="cfg">건별 1,500회 → batch 3회</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.3s</td></tr>
+      <tr><td class="vid">V3b</td><td>④b 알림 선생성 · 상태만 UPDATE<span class="cfg">INSERT가 없으므로 FK S락도 없음</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.3s</td></tr>
+      <tr><td class="vid">V3c</td><td>④c 외부 API 호출을 트랜잭션 밖으로<span class="cfg">락을 쥔 채 기다리는 구간 제거</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.7s</td></tr>
+      <tr><td class="vid">V6</td><td>운영 최종 조합 ③+④a+④c<span class="cfg">실제로 도달한 상태</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">6.4s</td></tr>
+      <tr><td class="vid">V4</td><td>수신자 자원 순서 통일<span class="cfg">계정→알림을 알림→계정으로</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.3s</td></tr>
+      <tr><td class="vid">V5</td><td>READ COMMITTED<span class="cfg">격리수준을 배치·수신자 양쪽에 적용</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.7s</td></tr>
+      <tr><td class="vid">V8</td><td>FK 제거<span class="cfg">배치가 계정 행을 잠글 경로 차단</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.2s</td></tr>
+      <tr><td class="vid">V9</td><td>수신자 트랜잭션 분리<span class="cfg">토큰 갱신 / 알림 확인을 따로</span></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="pill">없음</span></td><td class="num">8.4s</td></tr>
+      <tr class="fired"><td class="vid">V10</td><td><strong>request_id 인덱스 없음</strong><span class="cfg">그 외 조건은 V1과 동일</span></td><td class="num">34</td><td class="num">46</td><td class="num">42</td><td><span class="pill hot">34~46 · 중앙 42</span></td><td class="num">11.8s</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note warn">
+    <p><strong>0은 불가능이 아니라 이 부하에서 재현되지 않음을 뜻한다.</strong>
+    부하를 더 올리면 인덱스가 정상이어도 날 수 있다. 다만 인덱스 하나 차이로 0과 42가 갈린다는 것은 확실하다.</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>인덱스를 고치기 전에는 이렇게 보였다</h2>
+  <p class="prose">같은 구성들을 결함 있는 스키마에서 재면 전혀 다른 그림이 나온다.
+  그때는 왕복 횟수가 지배항이라는 결론을 냈었다. 인덱스를 고치자 그 결론이 통째로 사라졌다.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>#</th><th>구성</th><th class="num">인덱스 없음</th><th class="num">인덱스 있음</th><th>차이</th></tr></thead>
+    <tbody>
+      <tr><td class="vid">V0</td><td>Tasklet</td><td class="num">41 / 48 / 41</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
+      <tr><td class="vid">V1</td><td>chunk 전환</td><td class="num">38 / 43 / 49</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
+      <tr><td class="vid">V2</td><td>조회를 TX 밖으로</td><td class="num">43 / 45 / 48</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
+      <tr><td class="vid">V3c</td><td>외부 API를 TX 밖으로</td><td class="num">44 / 52 / 40</td><td class="num">0 / 0 / 0</td><td><span class="pill">해소</span></td></tr>
+      <tr><td class="vid">V3a</td><td>벌크로 묶기</td><td class="num">0 / 0 / 0</td><td class="num">0 / 0 / 0</td><td><span class="pill">양쪽 0</span></td></tr>
+      <tr><td class="vid">V8</td><td>FK 제거</td><td class="num">0 / 0 / 0</td><td class="num">0 / 0 / 0</td><td><span class="pill">양쪽 0</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="prose">
+    <p>결함 있는 스키마에서도 이미 한 가지는 분명했다 — <strong>V1(38/43/49)과 V2(43/45/48)가 완전히 중첩</strong>한다.
+    조회를 트랜잭션 밖으로 빼도 값이 내려가지 않았다. 쓰기 왕복은 그대로 남기 때문이다.
+    이 관찰만은 인덱스와 무관하다. 두 구성은 읽기 위치만 다르고 쓰기 패턴이 같다.</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>이력서 문장은 어떻게 되나</h2>
+
+  <h3>현재 서술</h3>
+  <div class="note">
+    <p>주 2~3회 발생하던 푸시 알림 발송 데드락. 대상 조회와 발송 처리가 한 트랜잭션에 묶여 트랜잭션이 길어진 것이 원인.
+    <strong>조회를 트랜잭션 밖으로 분리해 락을 쥔 채 대기하는 구간 자체를 제거한 것이 근본 조치</strong>였고,
+    상태 갱신을 BATCH UPDATE로 전환해 락 점유 시간을 추가로 줄임 → 0건</p>
+  </div>
+
+  <div class="prose"><p>이 실험이 말할 수 있는 것과 없는 것을 갈라야 한다.</p></div>
+
+  <div class="split">
+    <div class="cell">
+      <span class="k">말할 수 있다</span>
+      <span class="v" style="font-size:1.05rem;font-weight:700;line-height:1.5">동일 구조를 재현했을 때<br>락 범위가 지배적이었다</span>
+      <span class="n">조회 위치도 chunk 전환도 차이를 만들지 않았다</span>
+    </div>
+    <div class="cell">
+      <span class="k">말할 수 없다</span>
+      <span class="v" style="font-size:1.05rem;font-weight:700;line-height:1.5">운영 데드락의 원인도<br>인덱스였다</span>
+      <span class="n">회사 스키마를 확인하지 않았다</span>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <p><strong>확인이 필요하다.</strong> 운영에서 그 UPDATE가 인덱스를 탔는가?
+    안 탔다면 세 조치는 증상을 다루고 있었을 수 있고, 그렇다면 이력서의 근본 조치는 다시 써야 한다.
+    탔다면 이 실험 결과는 실험 환경 한정으로 남기고 운영 서술은 그대로 둔다.</p>
+  </div>
+
+  <div class="prose">
+    <p>어느 쪽이든 <strong>새로 생긴 이야기</strong>가 있다 —
+    데드락을 만나면 트랜잭션 길이부터 보게 되는데, 실제로 지배한 것은 <strong>락 범위</strong>였다.
+    실행계획을 먼저 떠보는 것이 순서였다.</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>틀렸던 것들</h2>
+  <p class="prose">결론에 이르기까지 모델을 세 번 폐기했다.
+  남겨두는 이유는, 이 기록이 있어야 마지막 결론이 우연이 아니라는 근거가 되기 때문이다.</p>
+  <ul>
+    <li><strong>초판 모델 폐기</strong> — 데드락을 배치 워커끼리의 행 순서 충돌로 잡았다. 85%를 3회 재현했지만 실제 사건은 배치와 수신자의 충돌이었다. 사용자 워크로드가 아예 없는 모델이었다.</li>
+    <li><strong>단일 프로세스 폐기</strong> — 커넥션 풀을 공유해서 수신자 실패가 데드락인지 풀 고갈인지 갈리지 않았다. 서버를 셋으로 나눴다.</li>
+    <li><strong>데드락 137건 오분류</strong> — Spring 예외 타입에 기댔더니 1213과 1205가 둘 다 <code>PessimisticLockingFailureException</code> 하위라 전부 타임아웃으로 집계됐다. 벤더 에러코드로 바꿨다.</li>
+    <li><strong>지표 수집 레이스</strong> — 작업 종료 후 실패가 이전 실행에 붙어 콘솔 0 · DB 2로 갈렸다. 정지 신호를 받으면 즉시 마지막 집계를 하고 닫도록 고쳤다.</li>
+    <li><strong>스키마 결함</strong> — 그리고 이 보고서의 결론이 된 인덱스 누락. 결과가 이상해서 <code>EXPLAIN</code>을 떠보지 않았다면 격리수준을 낮추면 데드락이 사라진다는 틀린 결론을 낼 뻔했다.</li>
+  </ul>
+</section>
+
+<hr>
+
+<section>
+  <h2>다음</h2>
+  <ul>
+    <li>인덱스가 정상인 상태에서 <strong>부하를 올려</strong> 데드락이 다시 나는 지점을 찾는다. 그래야 0의 의미가 확정된다</li>
+    <li>운영 UPDATE의 실행계획 확인 — 이력서 서술 수정 여부가 여기 걸린다</li>
+    <li>요청 서버와 수신자 서버에 대시보드를 붙여 화면에서 직접 재현하고 실패 화면을 남긴다</li>
+  </ul>
+</section>
+
+<footer>
+  <p>실험 환경의 결과이며 운영 환경의 실측이 아니다.
+  고정값 — MySQL 8.0 (2 CPU / 2 GB), <code>innodb_lock_wait_timeout=5s</code>,
+  테넌트 5 · 계정 1,000 · 발송요청 4,000 · 외부 API 지연 400µs, 수신자 동시 12 / 간격 3ms.
+  배치는 Java 21 · Spring Batch · JPA, 요청과 수신자는 Node(mysql2)로 커넥션 풀을 분리했다.</p>
+</footer>
+
+</div>
