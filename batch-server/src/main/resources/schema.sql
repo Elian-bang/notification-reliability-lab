@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS notification (
 CREATE TABLE IF NOT EXISTS experiment_control (
     id                TINYINT     NOT NULL PRIMARY KEY,
     run_id            VARCHAR(64) NOT NULL,
-    variant_id        VARCHAR(8)  NOT NULL,
+    variant_id        VARCHAR(32) NOT NULL,
     receiver_unify    TINYINT     NOT NULL DEFAULT 0,  -- 1 = 수신자도 A->B (V4)
     receiver_tx_split TINYINT     NOT NULL DEFAULT 0,  -- 1 = 토큰갱신/알림확인 분리 (V9)
     isolation_level   VARCHAR(24) NOT NULL DEFAULT 'REPEATABLE READ',

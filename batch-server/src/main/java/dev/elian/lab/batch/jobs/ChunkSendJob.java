@@ -11,6 +11,8 @@ import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.core.ChunkListener;
+import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -41,15 +43,15 @@ public class ChunkSendJob {
         this.ops = ops;
     }
 
-    public Job build(Knobs k, long apiDelayMicros, int totalLimit) {
+    public Job build(Knobs k, long publishLatencyMicros, int totalLimit, dev.elian.lab.batch.TxTimer timer) {
         ItemReader<SendTarget> reader = k.queryInTx()
                 ? new PendingReader(ops, k.chunkSize())      // 조회가 chunk 트랜잭션 안
                 : new ListItemReader<>(ops.findPending(totalLimit));  // 조회를 밖에서 미리
 
         ItemWriter<SendTarget> writer = chunk -> {
             List<SendTarget> items = new ArrayList<>(chunk.getItems());
-            long inTx = k.apiCallInTx() ? apiDelayMicros : 0;
-            if (!k.apiCallInTx()) SendOps.waitExternalApi(apiDelayMicros);
+            long inTx = k.publishInTx() ? publishLatencyMicros : 0;
+            if (!k.publishInTx()) SendOps.publishOutside(publishLatencyMicros);
             ops.send(items, k, inTx);
         };
 
@@ -58,6 +60,11 @@ public class ChunkSendJob {
                 .reader(reader)
                 .writer(writer)
                 .transactionAttribute(TxAttr.of(k))   // 격리수준을 chunk 트랜잭션에 적용
+                .listener(new ChunkListener() {
+                    @Override public void beforeChunk(ChunkContext c) { timer.begin(); }
+                    @Override public void afterChunk(ChunkContext c) { timer.end(); }
+                    @Override public void afterChunkError(ChunkContext c) { timer.end(); }
+                })
                 .build();
 
         return new JobBuilder("chunkSendJob-" + k.id(), jobRepository).start(step).build();

@@ -2,6 +2,7 @@ package dev.elian.lab.batch.jobs;
 
 import dev.elian.lab.batch.SendOps;
 import dev.elian.lab.batch.SendTarget;
+import dev.elian.lab.common.JobShape;
 import dev.elian.lab.common.Knobs;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -33,15 +34,22 @@ public class TaskletSendJob {
         this.ops = ops;
     }
 
-    public Job build(Knobs k, long apiDelayMicros, int batchSize) {
+    public Job build(Knobs k, long publishLatencyMicros, int batchSize, dev.elian.lab.batch.TxTimer timer) {
         Step step = new StepBuilder("taskletSend-" + k.id(), jobRepository)
                 .tasklet((contribution, chunkContext) -> {
+                    timer.begin();
                     List<SendTarget> targets = ops.findPending(batchSize);
-                    if (targets.isEmpty()) return RepeatStatus.FINISHED;
-                    long inTx = k.apiCallInTx() ? apiDelayMicros : 0;
-                    if (!k.apiCallInTx()) SendOps.waitExternalApi(apiDelayMicros);
-                    ops.send(targets, k, inTx);
+                    if (targets.isEmpty()) { timer.end(); return RepeatStatus.FINISHED; }
+                    long inTx = k.publishInTx() ? publishLatencyMicros : 0;
+                    if (!k.publishInTx()) SendOps.publishOutside(publishLatencyMicros);
+                    if (k.shape() == JobShape.PER_REQUEST) {
+                        // 건별 REQUIRES_NEW — 바깥 트랜잭션은 잠시 보류되고 건마다 새로 열린다
+                        ops.sendPerRequestTx(targets, k, inTx);
+                    } else {
+                        ops.send(targets, k, inTx);
+                    }
                     contribution.incrementWriteCount(targets.size());
+                    timer.end();
                     return RepeatStatus.CONTINUABLE;   // 남은 게 없을 때까지 반복
                 }, txManager)
                 .transactionAttribute(TxAttr.of(k))   // 격리수준을 tasklet 트랜잭션에 적용
