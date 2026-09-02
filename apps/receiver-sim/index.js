@@ -38,6 +38,44 @@ async function pickAccountAndNotification() {
 const TOKEN_SQL = 'UPDATE member_account SET access_token = ?, token_refreshed_at = NOW(6), last_login_at = NOW(6) WHERE id = ?';
 const READ_SQL  = 'UPDATE notification SET read_at = NOW(6) WHERE id = ?';
 
+const VIEW_SQL   = "UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?";
+const DETAIL_SQL = "SELECT seq, title, view_count FROM content_item WHERE seq = ?";
+
+/**
+ * 푸시를 누르고 콘텐츠 상세로 들어온 사용자.
+ *
+ * 본문 조회는 몇 ms 에 끝난다. 그런데 조회수 증가가 같은 트랜잭션 안에 있으면,
+ * 그 행을 배치가 쥐고 있는 동안 부수 작업 하나 때문에 응답 전체가 실패한다.
+ */
+async function viewContent(seq) {
+  const conn = await pool.getConnection();
+  metrics.attempted++;
+  const t0 = process.hrtime.bigint();
+  try {
+    if (variant.view_in_same_tx) {
+      await conn.beginTransaction();
+      await conn.execute(DETAIL_SQL, [seq]);   // 본문 — 빠르다
+      await conn.execute(VIEW_SQL, [seq]);     // 조회수 — 여기서 막힌다
+      await conn.commit();
+    } else {
+      await conn.execute(DETAIL_SQL, [seq]);   // 본문은 트랜잭션 밖
+      await conn.beginTransaction();
+      await conn.execute(VIEW_SQL, [seq]);
+      await conn.commit();
+    }
+    metrics.committed++;
+    metrics.lat.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  } catch (err) {
+    try { await conn.rollback(); } catch {}
+    if (err.errno === 1213) metrics.deadlocks++;
+    else if (err.errno === 1205) metrics.lockTimeouts++;
+    else metrics.otherErrors++;
+    metrics.lat.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  } finally {
+    conn.release();
+  }
+}
+
 async function oneRequest() {
   const t = await pickAccountAndNotification();
   if (!t) return;
@@ -102,18 +140,26 @@ async function flush() {
   await pool.execute(
     `INSERT INTO experiment_metric
        (run_id, role, attempted, committed, deadlocks, lock_timeouts, other_errors, p95_millis, step_token_fail, step_read_fail)
-     VALUES (?, 'receiver', ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        attempted=VALUES(attempted), committed=VALUES(committed), deadlocks=VALUES(deadlocks),
        lock_timeouts=VALUES(lock_timeouts), other_errors=VALUES(other_errors),
        p95_millis=VALUES(p95_millis), step_token_fail=VALUES(step_token_fail), step_read_fail=VALUES(step_read_fail)`,
-    [currentRun, metrics.attempted, metrics.committed, metrics.deadlocks,
+    [currentRun, variant.mode === "CONTENT" ? "viewer" : "receiver", metrics.attempted, metrics.committed, metrics.deadlocks,
      metrics.lockTimeouts, metrics.otherErrors, p95(), metrics.stepTokenFail, metrics.stepReadFail]);
 }
 
 async function worker() {
   for (;;) {
-    if (active) await oneRequest();
+    if (active) {
+      if (variant.mode === "CONTENT") {
+        // 푸시를 받은 사람이 곧 그 콘텐츠를 열 사람이다.
+        // 배치가 방금 푸시를 보낸 콘텐츠로만 들어간다 — 유입이 무작위면 사건이 재현되지 않는다
+        if (variant.hot_content_seq) await viewContent(variant.hot_content_seq);
+      } else {
+        await oneRequest();
+      }
+    }
     await new Promise(r => setTimeout(r, active ? INTERVAL_MS : 200));
   }
 }

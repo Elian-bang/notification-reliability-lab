@@ -28,6 +28,7 @@ import java.util.Map;
  * 값 하나를 고르는 게 아니라 곡선을 그려 균형점을 찾는다.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "lab.mode", havingValue = "sweep", matchIfMissing = true)
 public class Experiment implements CommandLineRunner {
 
     private final JdbcTemplate jdbc;

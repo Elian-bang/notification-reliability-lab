@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS experiment_control (
     receiver_tx_split TINYINT     NOT NULL DEFAULT 0,  -- 1 = 토큰갱신/알림확인 분리 (V9)
     isolation_level   VARCHAR(24) NOT NULL DEFAULT 'REPEATABLE READ',
     active            TINYINT     NOT NULL DEFAULT 0,
+    mode              VARCHAR(16) NOT NULL DEFAULT 'SEND',
+    hot_content_seq   BIGINT      NULL,
+    view_in_same_tx   TINYINT     NOT NULL DEFAULT 1,
     updated_at        DATETIME(6) NOT NULL
 ) ENGINE=InnoDB;
 
@@ -68,4 +71,17 @@ CREATE TABLE IF NOT EXISTS experiment_metric (
     step_token_fail BIGINT NOT NULL DEFAULT 0,
     step_read_fail  BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, role)
+) ENGINE=InnoDB;
+
+-- ───────────────────── 사건 재현: 공지 푸시 배치 ─────────────────────
+-- T+0s 배치가 콘텐츠 3건을 한 트랜잭션으로 처리했다.
+-- A는 T+72s 에 완료 표시(UPDATE)를 했지만 커밋은 T+171s였다.
+-- 그 99초 동안 A 행이 잠겨 있었고, 푸시를 받고 들어온 회원의 조회수 UPDATE가 대기했다.
+CREATE TABLE IF NOT EXISTS content_item (
+    seq        BIGINT       NOT NULL PRIMARY KEY,
+    title      VARCHAR(200) NOT NULL,
+    view_count INT          NOT NULL DEFAULT 0,
+    status     VARCHAR(16)  NOT NULL DEFAULT 'READY',
+    sent_at    DATETIME(6)  NULL,
+    audience   INT          NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;

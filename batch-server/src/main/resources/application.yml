@@ -27,3 +27,7 @@ lab:
                                  # 0 이 실제 동작. 값을 주면 "동기 호출이었다면" 대조군이 된다
   warmup-millis: 1500            # Node 부하가 붙을 시간
   only: ""
+  mode: sweep                    # sweep | incident
+  incident:
+    contents: 3                  # 사건 당시 배치가 잡은 콘텐츠 수
+    millis-per-content: 8000     # 건당 발송 시간 (사건은 8,540명에 72초)
