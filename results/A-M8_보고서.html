@@ -145,6 +145,7 @@
 <header>
   <div class="eyebrow">장애 기록 · 공지 푸시 배치 · 약 3분</div>
   <h1>99초 동안 잠긴 행 하나</h1>
+  <div role="note" style="margin:18px 0 6px;padding:14px 16px;border-radius:10px;background:var(--signal-bg);color:var(--ink);border:1px solid var(--rule-strong);font-size:.92rem;line-height:1.6"><strong style="color:var(--signal)">정정 (2026-09-14)</strong> — 사건 서술은 운영 기록이다. 아래 <strong>처방 비교 실험은 설계 결함</strong>이 있었다. 확인된 효과는 "완료 표시를 즉시 커밋" 하나이고, ③은 ①을 함께 켰으며 ②·④는 판정할 수 없었다. 랩의 락은 약 16초로 운영의 99초를 재현한 것이 아니다. 자세한 내용은 저장소 README 의 정정 절.</div>
   <p class="lede">푸시 알림을 누른 회원가 콘텐츠 페이지를 못 봤다.
   배치가 콘텐츠 한 건의 DB 행을 99초 동안 잠근 채 놔둔 탓이다.</p>
   <div class="meta">
@@ -308,33 +309,33 @@ SQL: UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?</pre>
     <p>운영에서는 데드락을 일부러 낼 수 없다. 그래서 같은 구조를 실험 환경에 세웠다 —
     배치는 콘텐츠 3건을 한 트랜잭션으로 돌고, 각 건은 발송(별도 트랜잭션) 뒤 완료 표시(바깥 트랜잭션)를 한다.
     푸시를 받은 사용자는 그 콘텐츠로 들어온다.</p>
-    <p><strong>재현됐다.</strong> 실패는 3회 실행 내내 정확히 3건, 전부 락 대기(1205)다. 데드락은 0건.
-    운영 로그와 같은 증상이다.</p>
+    <p>락 대기(1205)로 조회가 실패하는 증상이 났다. 데드락은 0건.
+    <em>정정 — 실패가 매번 정확히 3건인 이유는 확인하지 못했고, 반복별 원자료도 저장하지 않았다. 랩의 락은 약 16초라 운영 로그와 같은 조건이 아니다.</em></p>
   </div>
 
   <div class="scroll">
   <table>
     <thead><tr>
       <th>처방</th><th>설정</th>
-      <th class="num">조회 처리</th><th class="num">실패</th><th class="num">락 타임아웃</th><th>판정</th>
+      <th class="num">조회 시도</th><th class="num">실패</th><th class="num">락 타임아웃</th><th>판정</th>
     </tr></thead>
     <tbody>
       <tr class="fired"><td class="vid">AS-IS</td><td>사건 당시<span class="cfg">완료표시 일괄 커밋 · 조회수 본문과 같은 TX</span></td>
-        <td class="num">882</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">재현</span></td></tr>
+        <td class="num">882</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">기준</span></td></tr>
       <tr><td class="vid">①</td><td><strong>완료 표시를 건별 즉시 커밋</strong><span class="cfg">락이 바로 풀린다</span></td>
-        <td class="num">2,377</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
+        <td class="num">2,377</td><td class="num">0</td><td class="num">0</td><td><span class="pill">효과 확인</span></td></tr>
       <tr class="fired"><td class="vid">②</td><td>조회수를 본문 조회에서 분리<span class="cfg">별도 트랜잭션으로</span></td>
-        <td class="num">832</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">효과 없음</span></td></tr>
+        <td class="num">832</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">판정 불가 · 설계상</span></td></tr>
       <tr><td class="vid">③</td><td><strong>커밋 후 푸시</strong><span class="cfg">도달 시점에 락이 이미 풀려 있다</span></td>
-        <td class="num">2,333</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
+        <td class="num">2,333</td><td class="num">0</td><td class="num">0</td><td><span class="pill">①과 구분 불가</span></td></tr>
       <tr class="fired"><td class="vid">④</td><td>lock_wait_timeout 50s → 5s<span class="cfg">빨리 실패시키기</span></td>
-        <td class="num">865</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">피해만 축소</span></td></tr>
+        <td class="num">865</td><td class="num">3</td><td class="num">3</td><td><span class="pill hot">판정 불가 · 적용 미확인</span></td></tr>
       <tr><td class="vid">①+②</td><td>건별 커밋 + 조회수 분리</td>
-        <td class="num">2,364</td><td class="num">0</td><td class="num">0</td><td><span class="pill">해소</span></td></tr>
+        <td class="num">2,364</td><td class="num">0</td><td class="num">0</td><td><span class="pill">①의 효과</span></td></tr>
     </tbody>
   </table>
   </div>
-  <p style="font-size:.82rem;color:var(--ink-3)">각 구성 3회 반복, 중앙값. 실패 건수는 3회 내내 동일했다.</p>
+  <p style="font-size:.82rem;color:var(--ink-3)">중앙값만 저장했다. 조회 시도는 성공 건수가 아니라 시도 수다.</p>
 
   <h3>① 완료 표시 건별 커밋 — 직접 원인</h3>
   <div class="prose"><p>실패가 0이 된다. 락을 잡는 문장이 곧바로 커밋되니 부딪힐 대상이 사라진다.
@@ -349,13 +350,12 @@ SQL: UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?</pre>
   </div>
 
   <h3>③ 커밋 후 푸시 — 범위가 가장 넓다</h3>
-  <div class="prose"><p>①과 같은 효과인데, 이건 이 배치 하나가 아니라
-  <strong>모든 발송 배치에 적용되는 원칙</strong>이다 — <em>외부에 알림을 보내기 전에 내부 락을 다 풀어라.</em></p></div>
+  <div class="prose"><p>결과는 ①과 같았지만, <strong>이 변형은 ①(건별 커밋)을 함께 켰고 푸시 신호도 모든 처방에서 같은 시점</strong>이라 순서 변경의 효과는 따로 확인되지 않았다.
+  <em>외부에 알림을 보내기 전에 내부 락을 다 푼다</em>는 설계 원칙으로는 여전히 맞다고 보지만, 이 실험 결과로 뒷받침되지는 않는다.</p></div>
 
   <h3>④ 타임아웃 단축 — 실패를 못 없앤다</h3>
-  <div class="prose"><p>실패 3건은 그대로고, 사용자가 50초 대신 5초 뒤에 에러를 본다.
-  다만 <strong>커넥션을 45초 덜 문다.</strong> 락 대기가 길어지면 커넥션 풀 고갈로 번져
-  무관한 API까지 죽는데, 그 위험은 줄어든다. 근본은 아니고 피해 억제책이다.</p></div>
+  <div class="prose"><p>실패 3건과 조회 시도가 사건 당시와 거의 같았다. timeout 을 <code>SET GLOBAL</code> 로 바꿨는데 이는 <strong>이후 연결에만 적용</strong>되고, 조회 쪽은 시작 때 만든 커넥션 풀을 재사용한다.
+  <strong>5초가 실제로 적용됐는지 확인되지 않아 판정할 수 없다.</strong> "커넥션을 45초 덜 문다" 도 재지 않았다.</p></div>
 </section>
 
 <hr>
@@ -377,12 +377,10 @@ SQL: UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?</pre>
   </div>
 
   <div class="prose">
-    <p><strong>실패한 3건이 피해의 전부가 아니었다.</strong>
-    같은 시간에 같은 부하를 넣었는데 처리된 조회가 882건과 2,377건으로 갈린다.
-    락이 걸린 동안 그 콘텐츠 조회가 <strong>통째로 느려졌다.</strong>
-    에러를 본 3명 말고도 그 시간에 들어온 사람들이 전부 기다렸다.</p>
-    <p>그리고 <strong>이 사고는 p95로는 보이지 않는다.</strong> 전 구성이 174~208ms로 비슷하다.
-    실패한 3건이 꼬리라 백분위에 안 잡힌다. p95 대시보드만 보고 있으면 이런 사고는 지나간다.
+    <p>같은 시간인데 조회 시도가 882건과 2,377건으로 갈렸다.
+    <em>정정 — 조회 쪽은 12명이 쉬지 않고 요청하는 closed-loop 라, 락에 막힌 동안 그 12명이 멈춰 시도가 줄어든 것이다. "그 시간에 들어온 사람들이 전부 기다렸다" 는 과장이었다. 새 사용자의 대기 시간은 재지 않았다.</em></p>
+    <p>이 실험에서 p95 는 전 구성이 174~208ms 로 비슷했는데 조회 시도 수는 크게 달랐다. <strong>p95 만 보면 이런 차이를 놓칠 수 있다.</strong>
+    (실패 요청이 섞인 p95 이고 closed-loop 부하라, 일반화하려면 대기 분포를 따로 재야 한다.)
     <strong>처리량과 최대 대기를 함께 봐야 한다.</strong></p>
   </div>
 </section>

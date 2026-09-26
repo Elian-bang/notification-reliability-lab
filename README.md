@@ -1,122 +1,137 @@
 # notification-reliability-lab
 
-대량 알림 발송 시스템이 **트래픽과 장애에서 어디까지 버티는가**를 실험으로 확인하는 저장소.
+알림 발송 배치가 만드는 락 문제를 실험실에서 재현하고, **어떤 조치가 실제로 차이를 만드는지** 가르는 저장소.
 
-"구현했다"가 아니라 **문제 재현 → 설계 변경 → 재부하시험 → 숫자 변화**로 끝내는 것을 원칙으로 한다.
-측정하지 않은 수치는 쓰지 않고 `__` 로 남긴다.
-
----
-
-## 현재 미션 — A-M8 Deadlock Matrix
-
-> 푸시 발송 데드락을 없앤 두 조치 중 **무엇이 원인을 제거했고, 무엇이 확률만 낮췄나?**
-
-운영에서는 장애 대응이 우선이라 **두 조치**(조회를 트랜잭션 밖으로 / BATCH UPDATE)를 한 번에 넣었다.
-**개별 기여도를 가르는 통제 실험을 실험실에서 대신 한다.**
-탐색 과정에서 시도했던 청크 500→200 도 **효과가 있었는지 대조군(V2)으로 확인**한다.
-한 번에 넣었다. **개별 기여도를 가르는 통제 실험을 실험실에서 대신 한다.**
-
-- 설계 문서: [`docs/architecture.md`](docs/architecture.md)
-- 결정 기록: [`docs/adr/0001-topology-and-variables.md`](docs/adr/0001-topology-and-variables.md)
-- 상태: **2-a 단계 (V0 재현 확인)** · 결과 수치 전부 `__`
+> ⚠️ **정정 (2026-09-14)** — 외부 리뷰를 받고 코드와 원자료를 다시 검토했다.
+> 실험 2(처방 비교)는 **비교 설계에 결함이 있어** "네 처방 중 둘이 효과" 로 읽으면 안 된다. 아래 [정정](#정정-2026-09-14) 절에 무엇이 틀렸는지 적었다.
+> 실험 1(FK 데드락 매트릭스)은 반복별 원자료가 있고 결론도 좁혀 두었다.
 
 ---
 
-## 시스템 구성
+## 실험 두 개
 
-```mermaid
-flowchart LR
-    subgraph node["Node 런타임"]
-        RQ["요청 서버<br/>Next.js SSR<br/>커넥션 풀 N1"]
-        RC["수신자 서버<br/>Next.js SSR<br/>커넥션 풀 N2"]
-    end
-
-    subgraph jvm["JVM"]
-        BS["<b>Batch-Server</b> ★<br/>Java 21<br/>Spring Batch + JPA<br/>커넥션 풀 J1"]
-    end
-
-    DB[("MySQL 8.0<br/>2 CPU / 2GB")]
-
-    RQ -->|"INSERT 발송 요청"| DB
-    BS -->|"요청 읽기 → 알림 발송"| DB
-    RC -->|"토큰 갱신 → 알림 확인"| DB
-
-    style BS fill:#2d3748,color:#fff
-    style DB fill:#1a365d,color:#fff
-```
-
-**서버를 나눈 이유는 커넥션 풀 분리다.** 한 프로세스면 풀 하나를 공유해서,
-수신자 실패가 데드락 때문인지 **풀 고갈** 때문인지 갈리지 않는다.
-이 실험의 핵심 지표가 수신자 실패율이라 교란 변수를 먼저 없애야 한다.
+| | 질문 | 상태 | 결과 |
+|---|---|---|---|
+| **실험 1** · FK 데드락 매트릭스 | 발송 배치와 수신자 사이의 데드락을 없앤 조치 중 **무엇이 원인을 제거했나** | 완료 · 반복별 원자료 있음 | [`results/4단계_최종측정.md`](results/4단계_최종측정.md) |
+| **실험 2** · 사건 재현과 처방 비교 | 커밋이 늦은 트랜잭션이 행을 붙잡은 사건에서 **어떤 처방이 드나** | 1차 완료 · **설계 결함 확인, v2 예정** | [`results/사건재현_처방비교.md`](results/사건재현_처방비교.md) |
 
 ---
 
-## 데이터 모델 — 5테이블
+## 실험 1 — FK 데드락 매트릭스
 
-```mermaid
-erDiagram
-    tenant {
-        bigint  id PK
-        varchar name
-    }
-    member_account {
-        bigint   id PK
-        bigint   tenant_id FK
-        varchar  access_token
-        datetime token_refreshed_at
-        datetime last_login_at
-    }
-    notification_request {
-        bigint   id PK
-        bigint   tenant_id FK
-        bigint   account_id FK
-        varchar  payload
-        varchar  status
-        datetime requested_at
-        datetime finished_at
-    }
-    notification {
-        bigint   id PK
-        bigint   account_id FK
-        varchar  status
-        datetime created_at
-        datetime sent_at
-        datetime read_at
-    }
+### 재현 대상
 
-    tenant        ||--o{ member_account      : "소속"
-    tenant        ||--o{ notification_request : "요청자"
-    member_account ||--o{ notification_request : "FK — S락"
-    member_account ||--o{ notification         : "FK — S락"
-```
+배치가 알림을 기록할 때 FK 검사로 계정 행에 공유 락(S)이 걸리고, 같은 시각 수신자가 토큰 갱신으로 같은 계정 행에 배타 락(X)을 잡는다.
+V0(운영 최초 구조)를 3회 돌려 수신자 데드락 **46 · 45 · 48** 건. 앱 집계와 `INNODB_METRICS.lock_deadlocks` 가 매회 일치했다.
+<sub>계정 1,000 · 발송요청 4,000 · 수신자 동시 12 · MySQL 8.0 (2 CPU / 2GB) · `innodb_lock_wait_timeout=5s` — [`results/2a-2b_V0재현.md`](results/2a-2b_V0재현.md)</sub>
 
-**두 FK 가 `member_account` 를 향한다. 이게 이 실험의 전부다.**
+### 결과 — 구성마다 3회
 
-| 테이블 | 시각 컬럼 | 누가 채우나 |
+| 구성 | `request_id` 인덱스 **없음** | 인덱스 **있음** |
 |---|---|---|
-| `notification_request` | `requested_at` | 요청 서버 |
-| | `finished_at` · `status` | 배치 |
-| `notification` | `created_at` (등록) · `sent_at` (전송) | 배치 |
-| | `read_at` (확인) | 수신자 |
+| V0 · 운영 최초 (Tasklet) | 41 · 48 · 41 | 0 · 0 · 0 |
+| V1 · chunk 전환 | 38 · 43 · 49 | 0 · 0 · 0 |
+| V2 · 조회를 트랜잭션 밖으로 | 43 · 45 · 48 | 0 · 0 · 0 |
+| V3a · 벌크로 묶기 | 0 · 0 · 0 | 0 · 0 · 0 |
+| V5 · READ COMMITTED | 0 · 0 · 0 | 0 · 0 · 0 |
+| V8 · FK 제거 | 0 · 0 · 0 | 0 · 0 · 0 |
+| **V10 · 인덱스만 뺌** | — | **34 · 46 · 42** |
 
-**배치는 `member_account` 도 `tenant` 도 갱신하지 않는다.**
-계정 행에 걸리는 락은 **오직 FK 를 통해서만** 생긴다.
+<sub>수신자 데드락 건수. 인덱스 있음 열은 11개 구성 33회 전부 0 (표에는 일부만). [`3단계_반복측정_3회.md`](results/3단계_반복측정_3회.md) · [`4단계_최종측정.md`](results/4단계_최종측정.md)</sub>
+
+### 원인
+
+`UPDATE notification SET status='SENT' WHERE request_id = ?` 가 인덱스 없이 **`rows=3861` 풀스캔**이었고,
+REPEATABLE READ 에서 스캔한 행 전부에 next-key 락이 걸려 한 건 갱신이 테이블 전역 락이 됐다. 인덱스를 붙이면 `rows=1`.
+
+### 말할 수 있는 것 / 없는 것
+
+- **말할 수 있다** — 이 부하에서는 락 범위(인덱스)가 지배적이었고, **조회를 트랜잭션 밖으로 빼거나 chunk 로 바꾸는 것은 차이를 만들지 않았다** (V0 · V1 · V2 범위가 겹친다)
+- **말할 수 없다** — "운영 데드락의 원인도 인덱스였다." 운영 스키마와 실행계획을 확인하지 않았다
+- **남은 질문** — 인덱스가 정상일 때 부하를 올리면 데드락이 다시 나는가 ("0" 의 의미), chunk 500 → 200 이 효과가 있었는가 (데드락이 없는 조건에서만 재서 판정 불가)
+
+---
+
+## 실험 2 — 사건 재현과 처방 비교
+
+### 재현 대상
+
+배치가 콘텐츠 3건을 한 트랜잭션으로 처리했다. 첫 콘텐츠의 완료 표시(`UPDATE`)는 자기 발송 직후에 했지만, **커밋은 나머지 두 건 발송까지 끝난 뒤**였다.
+그동안 그 행이 잠겨, 푸시를 받고 들어온 사용자의 조회수 `UPDATE` 가 기다렸다.
+사건 기록은 [트러블슈팅 글](docs/gitbook/커밋을-안-한-트랜잭션이-페이지를-죽인-이야기.md) · 익명화 기준은 [`docs/익명화-기준.md`](docs/익명화-기준.md).
+
+랩은 이를 줄여서 돌린다 — 건당 발송 8초 · 콘텐츠 3건 · 리더 12명이 첫 콘텐츠를 쉬지 않고 조회.
+**첫 콘텐츠 행은 약 16초 잠긴다** (코드로 계산한 값). 운영에서 본 99초를 재현한 것은 아니다.
+
+### 결과와 판정
+
+| 처방 | 조회 시도 | 실패 | 판정 |
+|---|---:|---:|---|
+| 사건 당시 | 882 | 3 | 기준 |
+| ① 완료 표시 건별 커밋 | 2,377 | 0 | **효과 확인** — 행이 즉시 풀린다 |
+| ② 조회수를 본문 조회에서 분리 | 832 | 3 | **판정 불가** — 조회수 `UPDATE` 가 여전히 같은 행을 기다려 구조상 효과가 날 수 없었다 |
+| ③ 커밋 후 푸시 | 2,333 | 0 | **①과 구분 불가** — 이 변형이 건별 커밋까지 함께 켜고, 푸시 시점은 모든 처방에서 같다 |
+| ④ lock_wait_timeout 50s → 5s | 865 | 3 | **판정 불가** — `SET GLOBAL` 이 이미 열린 리더 연결에 적용됐다는 확인이 없다 |
+
+<sub>조회 시도는 성공 건수가 아니라 시도 수. 중앙값만 저장됐고 반복별 원자료는 없다.</sub>
+
+**확인된 효과는 하나다 — 완료 표시를 즉시 커밋해 락을 붙잡지 않는 것.**
+처리량 차이(882 → 2,377)는 12명 closed-loop 부하에서 막힌 시간만큼 시도가 줄어든 것이라, 사용자 대기 시간으로 읽으면 안 된다.
+
+---
+
+## 정정 (2026-09-14)
+
+| 이전에 쓴 것 | 실제 |
+|---|---|
+| "네 가지 처방 중 둘만 효과" | 효과가 확인된 메커니즘은 **하나**(즉시 커밋). ③은 ①을 포함하고, ②·④는 설계상 판정할 수 없었다 |
+| "진짜 피해는 실패 건수가 아니라 처리량 저하" | closed-loop 부하 설정의 산물. 새로 들어오는 사용자의 대기 시간은 재지 않았다 |
+| 99초 락 | 운영에서 본 값. 랩은 약 16초 |
+| ④ timeout 단축은 "피해만 줄였다" | 적용 여부가 확인되지 않아 판정 불가 |
+| 실패 3건 | 모든 처방에서 정확히 3건인 이유를 확인하지 못했다 |
+| `results/A-M8_결과.md` 의 V0~V9 `LATEST DETECTED DEADLOCK` | 모두 같은 데드락(2026-09-01 22:58:11)이 반복 출력된 것이다. 그 구성들은 데드락 0건이었다. V10 만 새 데드락 |
+| 이전 README 의 구성도 (Next.js 요청·수신자 서버, JPA) | 실제는 배치 서버(JdbcTemplate) + Node 수신자 시뮬레이터 1개. 요청 서버는 없다 |
+
+**v2 에서 할 일 (실험 2)** — 반복별 원자료와 지연 분포 저장 · `data_locks` / `innodb_trx` 샘플링으로 락 보유 타임라인 ·
+③은 순서만 바꾸는 변형으로 분리 · ②는 조회수 실패와 본문 성공을 따로 측정 · ④는 연결마다 세션 timeout 설정 후 적용값 로그 ·
+고정 도착률 부하와 운영 규모(72/65/32초, 50초 timeout) 조건.
+
+---
+
+## 구성
+
+| 구성 요소 | 내용 |
+|---|---|
+| `batch-server/` | Java 21 · Spring Boot · Spring Batch · JdbcTemplate. 실험 1·2 실행기 |
+| `apps/receiver-sim/` | Node 22 · mysql2. 수신자 12명을 흉내내는 부하 (전용 커넥션 풀) |
+| MySQL | 8.0 · 2 CPU / 2GB · REPEATABLE READ (`docker-compose.yml`) |
+
+배치와 수신자를 다른 프로세스로 둔 이유는 커넥션 풀 분리다. 풀을 공유하면 수신자 실패가 락 때문인지 풀 고갈 때문인지 갈리지 않는다.
 
 ## 실행
 
 ```bash
-docker compose up -d mysql          # MySQL 8.0 (고정: 2 CPU / 2GB, lock_wait_timeout=5s)
-docker compose --profile build run --rm build   # 멀티모듈 빌드
-java -jar batch-server/target/batch-server-0.1.0.jar --lab.only=V0
+docker compose up -d mysql
+docker compose --profile build run --rm build           # 빌드
+docker compose --profile run up -d receiver             # 수신자 부하 (control 테이블을 보고 켜진다)
+
+# chunk 크기 · 트랜잭션 경계 스윕 (기본 모드) — results/chunk_경계_결정.md
+java -jar batch-server/target/batch-server-0.1.0.jar --lab.mode=sweep
+
+# 실험 2 · 사건 재현
+java -jar batch-server/target/batch-server-0.1.0.jar --lab.mode=incident
 ```
 
-결과는 `results/A-M8_결과.md` 에 표와 `SHOW ENGINE INNODB STATUS` 원문으로 남는다.
+**알려진 문제**
+- **빈 DB 에서 `incident` 모드만 돌리면 수신자가 켜지지 않는다.** `experiment_control` 행을 `sweep` 모드만 만든다. `sweep` 을 한 번 먼저 돌리거나 행을 넣어야 한다
+- **실험 1(V-series) 표를 만든 실행기는 지금 코드에 없다.** 이후 chunk 스윕으로 교체됐다. 재현하려면 커밋 `0c175d3` 을 체크아웃한다
+- 반복 횟수는 `--lab.repeat` (기본 1)
 
 ---
 
 ## 원칙
 
-1. 모든 미션은 **숫자 변화**로 끝난다. "구현 완료"는 결과가 아니다
-2. 목표는 최고 TPS 가 아니라 **Normal / Safe / Breaking 세 숫자와 그 이유**
-3. **한 번에 변수 하나만** 바꾼다. 두 개 바꾸면 결과를 설명할 수 없다
-4. 실험 환경의 결과를 **운영 환경 실측인 것처럼 쓰지 않는다**
+1. 모든 실험은 **숫자 변화**로 끝난다. "구현 완료" 는 결과가 아니다
+2. **한 번에 변수 하나만** 바꾼다. 두 개 바꾸면 결과를 설명할 수 없다 — 실험 2의 ③이 이 원칙을 어겼다
+3. 실험 환경의 결과를 **운영 환경 실측인 것처럼 쓰지 않는다**
+4. 틀린 결론은 지우지 않고 **정정으로 남긴다**
