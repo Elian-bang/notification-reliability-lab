@@ -365,9 +365,9 @@ SQL: UPDATE content_item SET view_count = view_count + 1 WHERE seq = ?</pre>
 
   <div class="split">
     <div class="cell">
-      <span class="k">진짜 피해</span>
-      <span class="v hot">2.7배</span>
-      <span class="n">조회 처리량 882 → 2,377건<br>같은 시간, 같은 부하</span>
+      <span class="k">조회 시도 차이</span>
+      <span class="v hot">882 → 2,377</span>
+      <span class="n">같은 시간, 같은 부하<br>closed-loop 12 worker 설정의 영향이 크다</span>
     </div>
     <div class="cell">
       <span class="k">p95로 본 차이</span>
